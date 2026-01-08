@@ -164,8 +164,21 @@ async function createParticipation(participationData) {
   return apiRequest('/api/banking/participations', 'POST', participationData);
 }
 
+/**
+ * Create participation by ProjectId - convenience function for Domo
+ * Automatically finds the construction loan for the project
+ * Example: createParticipationByProject(4, { BankId: 4, ParticipationPercent: "32.0%", ExposureAmount: 15998489 })
+ */
+async function createParticipationByProject(projectId, participationData) {
+  return apiRequest(`/api/banking/participations/project/${projectId}`, 'POST', participationData);
+}
+
 async function updateParticipation(participationId, updates) {
   return apiRequest(`/api/banking/participations/${participationId}`, 'PUT', updates);
+}
+
+async function deleteParticipation(participationId) {
+  return apiRequest(`/api/banking/participations/${participationId}`, 'DELETE');
 }
 
 // Guarantees
@@ -185,8 +198,21 @@ async function createGuarantee(guaranteeData) {
   return apiRequest('/api/banking/guarantees', 'POST', guaranteeData);
 }
 
+/**
+ * Create guarantee by ProjectId - convenience function for Domo
+ * Automatically finds the construction loan for the project
+ * Example: createGuaranteeByProject(4, { PersonId: 1, GuaranteePercent: 100, GuaranteeAmount: 45698 })
+ */
+async function createGuaranteeByProject(projectId, guaranteeData) {
+  return apiRequest(`/api/banking/guarantees/project/${projectId}`, 'POST', guaranteeData);
+}
+
 async function updateGuarantee(guaranteeId, updates) {
   return apiRequest(`/api/banking/guarantees/${guaranteeId}`, 'PUT', updates);
+}
+
+async function deleteGuarantee(guaranteeId) {
+  return apiRequest(`/api/banking/guarantees/${guaranteeId}`, 'DELETE');
 }
 
 // DSCR Tests
@@ -227,8 +253,21 @@ async function createCovenant(covenantData) {
   return apiRequest('/api/banking/covenants', 'POST', covenantData);
 }
 
+/**
+ * Create covenant by ProjectId - convenience function for Domo
+ * Automatically finds the construction loan for the project
+ * Example: createCovenantByProject(4, { CovenantType: "Occupancy", Requirement: "50%", ProjectedValue: "76.5%" })
+ */
+async function createCovenantByProject(projectId, covenantData) {
+  return apiRequest(`/api/banking/covenants/project/${projectId}`, 'POST', covenantData);
+}
+
 async function updateCovenant(covenantId, updates) {
   return apiRequest(`/api/banking/covenants/${covenantId}`, 'PUT', updates);
+}
+
+async function deleteCovenant(covenantId) {
+  return apiRequest(`/api/banking/covenants/${covenantId}`, 'DELETE');
 }
 
 // Liquidity Requirements
@@ -619,11 +658,22 @@ const newParticipation = await createParticipation({
   PaidOff: false
 });
 
+// Create participation by ProjectId (no LoanId needed!)
+await createParticipationByProject(4, {
+  BankId: 4, // b1Bank
+  ParticipationPercent: "32.0%",
+  ExposureAmount: 15998489,
+  PaidOff: false
+});
+
 // Update a participation
 await updateParticipation(1, {
   ExposureAmount: 16000000,
   PaidOff: true
 });
+
+// Delete a participation
+await deleteParticipation(participationId);
 
 // ============================================================
 // BANKING - CREATE & UPDATE GUARANTEES
@@ -638,11 +688,21 @@ const newGuarantee = await createGuarantee({
   GuaranteeAmount: 45698
 });
 
+// Create guarantee by ProjectId (no LoanId needed!)
+await createGuaranteeByProject(4, {
+  PersonId: 1, // Toby Easterly
+  GuaranteePercent: 100,
+  GuaranteeAmount: 45698
+});
+
 // Update a guarantee
 await updateGuarantee(1, {
   GuaranteePercent: 50,
   GuaranteeAmount: 22849
 });
+
+// Delete a guarantee (remove personal guarantee)
+await deleteGuarantee(guaranteeId);
 
 // ============================================================
 // BANKING - CREATE & UPDATE DSCR TESTS
@@ -679,10 +739,22 @@ const newCovenant = await createCovenant({
   Notes: "Occupancy covenant"
 });
 
+// Create covenant by ProjectId (no LoanId needed!)
+await createCovenantByProject(4, {
+  CovenantType: "Occupancy",
+  CovenantDate: "2027-03-31",
+  Requirement: "50%",
+  ProjectedValue: "76.5%",
+  Notes: "Occupancy covenant"
+});
+
 // Update a covenant
 await updateCovenant(1, {
   ProjectedValue: "80%"
 });
+
+// Delete a covenant
+await deleteCovenant(covenantId);
 
 // ============================================================
 // BANKING - CREATE & UPDATE LIQUIDITY REQUIREMENTS

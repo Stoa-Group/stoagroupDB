@@ -23,21 +23,27 @@ router.get('/participations', bankingController.getAllParticipations);
 router.get('/participations/:id', bankingController.getParticipationById);
 router.get('/participations/project/:projectId', bankingController.getParticipationsByProject);
 router.post('/participations', bankingController.createParticipation);
+router.post('/participations/project/:projectId', bankingController.createParticipationByProject); // Convenience: create by ProjectId
 router.put('/participations/:id', bankingController.updateParticipation);
+router.delete('/participations/:id', bankingController.deleteParticipation);
 
 // Guarantee routes
 router.get('/guarantees', bankingController.getAllGuarantees);
 router.get('/guarantees/:id', bankingController.getGuaranteeById);
 router.get('/guarantees/project/:projectId', bankingController.getGuaranteesByProject);
 router.post('/guarantees', bankingController.createGuarantee);
+router.post('/guarantees/project/:projectId', bankingController.createGuaranteeByProject); // Convenience: create by ProjectId
 router.put('/guarantees/:id', bankingController.updateGuarantee);
+router.delete('/guarantees/:id', bankingController.deleteGuarantee);
 
 // Covenant routes
 router.get('/covenants', bankingController.getAllCovenants);
 router.get('/covenants/:id', bankingController.getCovenantById);
 router.get('/covenants/project/:projectId', bankingController.getCovenantsByProject);
 router.post('/covenants', bankingController.createCovenant);
+router.post('/covenants/project/:projectId', bankingController.createCovenantByProject); // Convenience: create by ProjectId
 router.put('/covenants/:id', bankingController.updateCovenant);
+router.delete('/covenants/:id', bankingController.deleteCovenant);
 
 // Liquidity Requirement routes
 router.get('/liquidity-requirements', bankingController.getAllLiquidityRequirements);

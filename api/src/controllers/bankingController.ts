@@ -498,6 +498,64 @@ export const createParticipation = async (req: Request, res: Response, next: Nex
   }
 };
 
+/**
+ * Create participation by ProjectId - convenience function for Domo
+ * Automatically finds the construction loan for the project
+ */
+export const createParticipationByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const { BankId, ParticipationPercent, ExposureAmount, PaidOff, Notes } = req.body;
+
+    if (!BankId) {
+      res.status(400).json({ success: false, error: { message: 'BankId is required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    
+    // Find the construction loan for this project
+    const findLoan = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query(`
+        SELECT TOP 1 LoanId 
+        FROM banking.Loan 
+        WHERE ProjectId = @projectId 
+        ORDER BY CASE WHEN LoanPhase = 'Construction' THEN 0 ELSE 1 END, LoanId
+      `);
+
+    if (findLoan.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'No loan found for this project' } });
+      return;
+    }
+
+    const loanId = findLoan.recordset[0].LoanId;
+    
+    // Create the participation
+    const result = await pool.request()
+      .input('ProjectId', sql.Int, projectId)
+      .input('LoanId', sql.Int, loanId)
+      .input('BankId', sql.Int, BankId)
+      .input('ParticipationPercent', sql.NVarChar, ParticipationPercent)
+      .input('ExposureAmount', sql.Decimal(18, 2), ExposureAmount)
+      .input('PaidOff', sql.Bit, PaidOff || false)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .query(`
+        INSERT INTO banking.Participation (ProjectId, LoanId, BankId, ParticipationPercent, ExposureAmount, PaidOff, Notes)
+        OUTPUT INSERTED.*
+        VALUES (@ProjectId, @LoanId, @BankId, @ParticipationPercent, @ExposureAmount, @PaidOff, @Notes)
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or BankId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
 export const updateParticipation = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
@@ -641,6 +699,63 @@ export const createGuarantee = async (req: Request, res: Response, next: NextFun
   }
 };
 
+/**
+ * Create guarantee by ProjectId - convenience function for Domo
+ * Automatically finds the construction loan for the project
+ */
+export const createGuaranteeByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const { PersonId, GuaranteePercent, GuaranteeAmount, Notes } = req.body;
+
+    if (!PersonId) {
+      res.status(400).json({ success: false, error: { message: 'PersonId is required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    
+    // Find the construction loan for this project
+    const findLoan = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query(`
+        SELECT TOP 1 LoanId 
+        FROM banking.Loan 
+        WHERE ProjectId = @projectId 
+        ORDER BY CASE WHEN LoanPhase = 'Construction' THEN 0 ELSE 1 END, LoanId
+      `);
+
+    if (findLoan.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'No loan found for this project' } });
+      return;
+    }
+
+    const loanId = findLoan.recordset[0].LoanId;
+    
+    // Create the guarantee
+    const result = await pool.request()
+      .input('ProjectId', sql.Int, projectId)
+      .input('LoanId', sql.Int, loanId)
+      .input('PersonId', sql.Int, PersonId)
+      .input('GuaranteePercent', sql.Decimal(10, 4), GuaranteePercent)
+      .input('GuaranteeAmount', sql.Decimal(18, 2), GuaranteeAmount)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .query(`
+        INSERT INTO banking.Guarantee (ProjectId, LoanId, PersonId, GuaranteePercent, GuaranteeAmount, Notes)
+        OUTPUT INSERTED.*
+        VALUES (@ProjectId, @LoanId, @PersonId, @GuaranteePercent, @GuaranteeAmount, @Notes)
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or PersonId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
 export const updateGuarantee = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
@@ -771,6 +886,64 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or LoanId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+/**
+ * Create covenant by ProjectId - convenience function for Domo
+ * Automatically finds the construction loan for the project
+ */
+export const createCovenantByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const { CovenantType, CovenantDate, Requirement, ProjectedValue, Notes } = req.body;
+
+    if (!CovenantType) {
+      res.status(400).json({ success: false, error: { message: 'CovenantType is required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    
+    // Find the construction loan for this project
+    const findLoan = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query(`
+        SELECT TOP 1 LoanId 
+        FROM banking.Loan 
+        WHERE ProjectId = @projectId 
+        ORDER BY CASE WHEN LoanPhase = 'Construction' THEN 0 ELSE 1 END, LoanId
+      `);
+
+    if (findLoan.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'No loan found for this project' } });
+      return;
+    }
+
+    const loanId = findLoan.recordset[0].LoanId;
+    
+    // Create the covenant
+    const result = await pool.request()
+      .input('ProjectId', sql.Int, projectId)
+      .input('LoanId', sql.Int, loanId)
+      .input('CovenantType', sql.NVarChar, CovenantType)
+      .input('CovenantDate', sql.Date, CovenantDate)
+      .input('Requirement', sql.NVarChar, Requirement)
+      .input('ProjectedValue', sql.NVarChar, ProjectedValue)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .query(`
+        INSERT INTO banking.Covenant (ProjectId, LoanId, CovenantType, CovenantDate, Requirement, ProjectedValue, Notes)
+        OUTPUT INSERTED.*
+        VALUES (@ProjectId, @LoanId, @CovenantType, @CovenantDate, @Requirement, @ProjectedValue, @Notes)
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId' } });
       return;
     }
     next(error);
