@@ -24,10 +24,10 @@ async function testAPI() {
     console.log('2️⃣  Testing GET /api/core/projects...');
     const projects = await fetch(`${API_BASE_URL}/api/core/projects`);
     const projectsData = await projects.json();
-    if (projectsData.success) {
+    if (projects.ok && projectsData.success) {
       console.log(`   ✅ Projects: ${projectsData.data.length} found\n`);
     } else {
-      console.log(`   ❌ Projects: ${projectsData.error?.message}\n`);
+      console.log(`   ❌ Projects: ${projectsData.error?.message || `HTTP ${projects.status}: ${projects.statusText}`}\n`);
     }
     
     // Test 3: Get Banks
