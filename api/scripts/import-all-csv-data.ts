@@ -196,7 +196,8 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
       'Banks that have expressed', 'Bank', 'United Bank', 'Atlantic Union',
       'Pinnacle Bank', 'Live Oak', 'Bank of America', 'Bank OZK',
       'Valley Bank', 'Regions', 'Truist', 'United Community',
-      'Servis1st', 'First Bank', 'First Citizens', 'Total', 'Portfolio'
+      'Servis1st', 'First Bank', 'First Citizens', 'Total', 'Portfolio',
+      'Under Construction', 'Lease-Up', 'NC/SC Deal', 'Deal #'
     ];
     
     if (skipPatterns.some(pattern => borrower.includes(pattern))) continue;
@@ -205,8 +206,15 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
     const bankPrefixes = ['Bank', 'Credit Union', 'Federal Credit', 'National Bank', 'State Bank'];
     if (bankPrefixes.some(prefix => borrower.startsWith(prefix))) continue;
     
-    // Skip if it's clearly not a project name (too short, no "The" or "at" or "LLC")
+    // Skip if it's clearly not a project name (too short)
     if (borrower.length < 5) continue;
+    
+    // Skip if it doesn't look like a project name (no "The", "at", "LLC", or common project words)
+    const projectIndicators = ['The ', ' at ', 'LLC', 'LLC,', 'Rd', 'Ave', 'Boulevard', 'Street', 'Lane'];
+    const hasProjectIndicator = projectIndicators.some(indicator => borrower.includes(indicator));
+    
+    // If it's a short name without project indicators, skip it (likely a section header)
+    if (borrower.length < 15 && !hasProjectIndicator) continue;
     
     // Find project by borrower name
     const projectId = await getProjectId(pool, borrower);
@@ -738,17 +746,44 @@ async function importTargetedBanks(pool: sql.ConnectionPool, csvPath: string) {
   
   let bankTargetsCreated = 0;
   
+  // Determine column indices based on header row
+  const headerRowData = rows[headerRow];
+  let bankCol = -1, assetsCol = -1, cityCol = -1, stateCol = -1, exposureCol = -1, contactCol = -1, commentsCol = -1;
+  
+  for (let j = 0; j < headerRowData.length; j++) {
+    const header = headerRowData[j]?.toLowerCase() || '';
+    if (header.includes('bank') && !header.includes('exposure')) bankCol = j;
+    if (header.includes('asset')) assetsCol = j;
+    if (header.includes('city')) cityCol = j;
+    if (header.includes('state') && !header.includes('exposure')) stateCol = j;
+    if (header.includes('exposure')) exposureCol = j;
+    if (header.includes('contact')) contactCol = j;
+    if (header.includes('comment')) commentsCol = j;
+  }
+  
+  // Fallback to original positions if not found
+  if (bankCol === -1) bankCol = 4;
+  if (assetsCol === -1) assetsCol = 3;
+  if (cityCol === -1) cityCol = 5;
+  if (stateCol === -1) stateCol = 8;
+  if (exposureCol === -1) exposureCol = 9;
+  if (contactCol === -1) contactCol = 10;
+  if (commentsCol === -1) commentsCol = 11;
+  
   for (let i = headerRow + 1; i < rows.length; i++) {
     const row = rows[i];
-    if (row.length < 10 || !row[4] || row[4].trim() === '') continue;
+    if (row.length < Math.max(bankCol, exposureCol) + 1 || !row[bankCol] || row[bankCol].trim() === '') continue;
     
-    const bankName = row[4].trim();
-    const assets = row[3]?.trim() || null;
-    const city = row[5]?.trim() || null;
-    const state = row[8]?.trim() || null;
-    const exposure = parseAmount(row[9]);
-    const contact = row[10]?.trim() || null;
-    const comments = row[11]?.trim() || null;
+    const bankName = row[bankCol].trim();
+    // Skip empty rows or section headers
+    if (!bankName || bankName === 'Bank' || bankName.includes('Lead Bank') || bankName.includes('Participant')) continue;
+    
+    const assets = assetsCol >= 0 && row[assetsCol] ? row[assetsCol].trim() : null;
+    const city = cityCol >= 0 && row[cityCol] ? row[cityCol].trim() : null;
+    const state = stateCol >= 0 && row[stateCol] ? row[stateCol].trim() : null;
+    const exposure = exposureCol >= 0 && row[exposureCol] ? parseAmount(row[exposureCol]) : null;
+    const contact = contactCol >= 0 && row[contactCol] ? row[contactCol].trim() : null;
+    const comments = commentsCol >= 0 && row[commentsCol] ? row[commentsCol].trim() : null;
     
     // First, ensure bank exists
     let bankId = await getBankId(pool, bankName);
