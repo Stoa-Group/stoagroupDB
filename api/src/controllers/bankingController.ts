@@ -156,12 +156,15 @@ export const updateLoan = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    const result = await request.query(`
+    await request.query(`
       UPDATE banking.Loan
       SET ${fields.join(', ')}
-      OUTPUT INSERTED.*
       WHERE LoanId = @id
     `);
+
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM banking.Loan WHERE LoanId = @id');
 
     if (result.recordset.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Loan not found' } });

@@ -385,13 +385,29 @@ async function getAPIDocs() {
 // ============================================================
 
 // ============================================================
-// DOMO INTEGRATION
+// DOMO INTEGRATION - UPDATE ANY DATA POINT BY ID
 // ============================================================
 // 
 // For Domo Custom Scripts:
 // 1. Copy this entire file into your Domo Custom Script
-// 2. Use the create/update functions to modify data
+// 2. Use the update functions to modify ANY field by ID
 // 3. All functions use the Render API: https://stoagroupdb.onrender.com
+//
+// ⚡ UPDATE ANY FIELD BY ID - Just send the fields you want to change:
+//
+//   updateProject(projectId, { Units: 350, Stage: "Stabilized" })
+//   updateLoan(loanId, { Spread: "0.75%", InterestRate: "SOFR + 0.75%" })
+//   updateParticipation(participationId, { ExposureAmount: 16000000 })
+//   updateGuarantee(guaranteeId, { GuaranteePercent: 50 })
+//   updateDSCRTest(testId, { ProjectedValue: "1.25" })
+//   updateCovenant(covenantId, { ProjectedValue: "80%" })
+//   updateLiquidityRequirement(reqId, { TotalAmount: 6000000 })
+//   updateBankTarget(targetId, { ExposureWithStoa: 50000000 })
+//   updateEquityCommitment(commitmentId, { Amount: 6000000 })
+//   updateUnderContract(contractId, { Price: 11000000 })
+//   updateCommercialListed(listedId, { Price: 5000000 })
+//   updateCommercialAcreage(acreageId, { Price: 2000000 })
+//   updateClosedProperty(propertyId, { Price: 12000000 })
 //
 // Available CREATE functions (POST):
 //   - createProject, createBank, createPerson, createEquityPartner
@@ -400,12 +416,24 @@ async function getAPIDocs() {
 //   - createEquityCommitment, createUnderContract, createCommercialListed
 //   - createCommercialAcreage, createClosedProperty
 //
-// Available UPDATE functions (PUT):
-//   - updateProject, updateBank, updatePerson, updateEquityPartner
-//   - updateLoan, updateParticipation, updateGuarantee, updateDSCRTest
-//   - updateCovenant, updateLiquidityRequirement, updateBankTarget
-//   - updateEquityCommitment, updateUnderContract, updateCommercialListed
-//   - updateCommercialAcreage, updateClosedProperty
+// Available UPDATE functions (PUT) - Update ANY field by ID:
+//   - updateProject(projectId, {field: value}) - Update any project field
+//   - updateBank(bankId, {field: value}) - Update any bank field
+//   - updatePerson(personId, {field: value}) - Update any person field
+//   - updateEquityPartner(partnerId, {field: value}) - Update any equity partner field
+//   - updateLoan(loanId, {field: value}) - Update any loan field
+//   - updateLoanByProject(projectId, {field: value}) - Update loan by ProjectId
+//   - updateParticipation(participationId, {field: value}) - Update any participation field
+//   - updateGuarantee(guaranteeId, {field: value}) - Update any guarantee field
+//   - updateDSCRTest(testId, {field: value}) - Update any DSCR test field
+//   - updateCovenant(covenantId, {field: value}) - Update any covenant field
+//   - updateLiquidityRequirement(reqId, {field: value}) - Update any liquidity requirement field
+//   - updateBankTarget(targetId, {field: value}) - Update any bank target field
+//   - updateEquityCommitment(commitmentId, {field: value}) - Update any equity commitment field
+//   - updateUnderContract(contractId, {field: value}) - Update any under contract field
+//   - updateCommercialListed(listedId, {field: value}) - Update any commercial listed field
+//   - updateCommercialAcreage(acreageId, {field: value}) - Update any commercial acreage field
+//   - updateClosedProperty(propertyId, {field: value}) - Update any closed property field
 //
 // For Node.js/ES6 modules, uncomment:
 // export {
@@ -433,12 +461,85 @@ async function getAPIDocs() {
 // };
 
 // ============================================================
-// DOMO USAGE EXAMPLES - CREATE & UPDATE DATA
+// DOMO USAGE EXAMPLES - UPDATE ANY DATA POINT BY ID
 // ============================================================
 
 /*
 // ============================================================
-// CORE ENTITIES - CREATE & UPDATE
+// UPDATE ANY FIELD BY ID - Just send what you want to change
+// ============================================================
+
+// Update project - change any field
+await updateProject(4, {
+  Units: 350,
+  Stage: "Stabilized",
+  City: "Lafayette"
+});
+
+// Update loan interest rate - change any field
+await updateLoan(4, {
+  Spread: "0.75%",
+  InterestRate: "SOFR + 0.75%",
+  LoanAmount: 50000000
+});
+
+// Update loan by ProjectId (no need to know LoanId)
+await updateLoanByProject(4, {
+  Spread: "0.75%"
+});
+
+// Update participation - change any field
+await updateParticipation(11, {
+  ExposureAmount: 16000000,
+  ParticipationPercent: "32.5%",
+  PaidOff: false
+});
+
+// Update guarantee - change any field
+await updateGuarantee(1, {
+  GuaranteePercent: 50,
+  GuaranteeAmount: 25000
+});
+
+// Update DSCR test - change any field
+await updateDSCRTest(1, {
+  ProjectedValue: "1.30",
+  Requirement: 1.25,
+  TestDate: "2025-12-31"
+});
+
+// Update covenant - change any field
+await updateCovenant(1, {
+  ProjectedValue: "80%",
+  Requirement: "50%"
+});
+
+// Update liquidity requirement - change any field
+await updateLiquidityRequirement(1, {
+  TotalAmount: 7000000,
+  LendingBankAmount: 3000000
+});
+
+// Update bank target - change any field
+await updateBankTarget(1, {
+  ExposureWithStoa: 50000000,
+  Comments: "Updated relationship status"
+});
+
+// Update equity commitment - change any field
+await updateEquityCommitment(1, {
+  Amount: 6000000,
+  FundingDate: "2024-06-30"
+});
+
+// Update under contract - change any field
+await updateUnderContract(1, {
+  Price: 11000000,
+  ClosingDate: "2024-12-31"
+});
+
+// ============================================================
+// CREATE NEW RECORDS
 // ============================================================
 
 // Create a new project
@@ -446,19 +547,11 @@ const newProject = await createProject({
   ProjectName: "The Heights at Picardy",
   City: "Baton Rouge",
   State: "LA",
-  Region: "Gulf Coast",
-  Location: "Baton Rouge, LA",
   Units: 232,
   ProductType: "Heights",
   Stage: "Under Construction"
 });
 console.log('Created project ID:', newProject.data.ProjectId);
-
-// Update a project
-const updated = await updateProject(1, {
-  Units: 250,
-  Stage: "Stabilized"
-});
 
 // Create a bank
 const newBank = await createBank({
