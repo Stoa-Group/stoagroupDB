@@ -188,7 +188,25 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
     if (row.length < 3 || !row[1] || row[1].trim() === '') continue;
     
     const borrower = row[1]?.trim();
-    if (!borrower || borrower === 'Other' || borrower.includes('Loan') || borrower === 'Multifamily' || borrower === 'Under Contract' || borrower === 'Liquidated') continue;
+    
+    // Skip section headers and non-project rows
+    const skipPatterns = [
+      'Other', 'Loan', 'Multifamily', 'Under Contract', 'Liquidated',
+      'Pre-Construction', 'Stoa Construction', 'Construction',
+      'Banks that have expressed', 'Bank', 'United Bank', 'Atlantic Union',
+      'Pinnacle Bank', 'Live Oak', 'Bank of America', 'Bank OZK',
+      'Valley Bank', 'Regions', 'Truist', 'United Community',
+      'Servis1st', 'First Bank', 'First Citizens', 'Total', 'Portfolio'
+    ];
+    
+    if (skipPatterns.some(pattern => borrower.includes(pattern))) continue;
+    
+    // Skip if borrower looks like a bank name (starts with common bank words)
+    const bankPrefixes = ['Bank', 'Credit Union', 'Federal Credit', 'National Bank', 'State Bank'];
+    if (bankPrefixes.some(prefix => borrower.startsWith(prefix))) continue;
+    
+    // Skip if it's clearly not a project name (too short, no "The" or "at" or "LLC")
+    if (borrower.length < 5) continue;
     
     // Find project by borrower name
     const projectId = await getProjectId(pool, borrower);
