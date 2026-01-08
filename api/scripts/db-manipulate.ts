@@ -12,27 +12,46 @@
 import sql from 'mssql';
 import dotenv from 'dotenv';
 import path from 'path';
+import { existsSync } from 'fs';
 
-// Load environment variables - look for .env in api/ directory
-// When running from api/scripts/, we need to go up one level
-const envPath = path.resolve(process.cwd(), '.env');
-dotenv.config({ path: envPath });
+// Load environment variables - try multiple locations
+// 1. api/.env (when running from api/ directory)
+// 2. ../.env (root directory when running from api/)
+// 3. Default dotenv behavior
+
+const possibleEnvPaths = [
+  path.resolve(process.cwd(), '.env'),              // api/.env
+  path.resolve(process.cwd(), '../.env'),          // root/.env (when in api/)
+  path.resolve(__dirname, '../../.env'),           // root/.env (from script location)
+];
+
+let envLoaded = false;
+for (const envPath of possibleEnvPaths) {
+  if (existsSync(envPath)) {
+    const result = dotenv.config({ path: envPath });
+    if (!result.error) {
+      envLoaded = true;
+      console.log(`✅ Loaded .env from: ${envPath}`);
+      break;
+    }
+  }
+}
 
 // Fallback to default dotenv behavior
-if (!process.env.DB_SERVER) {
+if (!envLoaded) {
   dotenv.config();
 }
 
 // Validate required environment variables
 if (!process.env.DB_SERVER || !process.env.DB_DATABASE || !process.env.DB_USER || !process.env.DB_PASSWORD) {
   console.error('❌ Missing required environment variables!');
-  console.error('   Make sure you have a .env file in the api/ directory with:');
+  console.error('   Make sure you have a .env file with:');
   console.error('   - DB_SERVER');
   console.error('   - DB_DATABASE');
   console.error('   - DB_USER');
   console.error('   - DB_PASSWORD');
   console.error(`\n   Current working directory: ${process.cwd()}`);
-  console.error(`   Looking for .env at: ${envPath}`);
+  console.error(`   Checked paths: ${possibleEnvPaths.join(', ')}`);
   process.exit(1);
 }
 
