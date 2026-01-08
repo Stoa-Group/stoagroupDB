@@ -3,19 +3,27 @@ import * as coreController from '../controllers/coreController';
 
 const router = Router();
 
-// Project routes (POST and PUT only - Domo handles GET)
+// Project routes
+router.get('/projects', coreController.getAllProjects);
+router.get('/projects/:id', coreController.getProjectById);
 router.post('/projects', coreController.createProject);
 router.put('/projects/:id', coreController.updateProject);
 
 // Bank routes
+router.get('/banks', coreController.getAllBanks);
+router.get('/banks/:id', coreController.getBankById);
 router.post('/banks', coreController.createBank);
 router.put('/banks/:id', coreController.updateBank);
 
 // Person routes
+router.get('/persons', coreController.getAllPersons);
+router.get('/persons/:id', coreController.getPersonById);
 router.post('/persons', coreController.createPerson);
 router.put('/persons/:id', coreController.updatePerson);
 
 // Equity Partner routes
+router.get('/equity-partners', coreController.getAllEquityPartners);
+router.get('/equity-partners/:id', coreController.getEquityPartnerById);
 router.post('/equity-partners', coreController.createEquityPartner);
 router.put('/equity-partners/:id', coreController.updateEquityPartner);
 

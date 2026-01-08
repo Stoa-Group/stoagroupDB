@@ -12,7 +12,9 @@
     "db:exec": "npx ts-node --transpile-only scripts/db-manipulate.ts exec",
     "db:sp": "npx ts-node --transpile-only scripts/db-manipulate.ts sp",
     "db:test": "npx ts-node --transpile-only scripts/test-connection.ts",
-    "db:sync-all": "npx ts-node --transpile-only scripts/sync-all-data.ts"
+    "db:sync-all": "npx ts-node --transpile-only scripts/sync-all-data.ts",
+    "db:sync-loans": "npx ts-node --transpile-only scripts/sync-loans-data.ts",
+    "db:test-api": "npx ts-node --transpile-only scripts/test-api.ts"
   },
   "keywords": ["api", "rest", "azure-sql"],
   "author": "",

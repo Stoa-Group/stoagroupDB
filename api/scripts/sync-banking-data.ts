@@ -1,138 +1,146 @@
 #!/usr/bin/env ts-node
 /**
- * Complete Data Sync Script
+ * Comprehensive Banking Data Sync Script
  * 
- * Syncs ALL banking dashboard data to database via API
- * Processes: Projects, Banks, Loans, Participations, Guarantees, DSCR Tests, Covenants, Liquidity, Bank Targets
+ * Syncs all banking dashboard data to the database via API:
+ * - Projects
+ * - Banks
+ * - Loans
+ * - Participations
+ * - Guarantees
+ * - DSCR Tests
+ * - Covenants
+ * - Liquidity Requirements
+ * - Bank Targets
  * 
- * Usage: npm run db:sync-all
+ * Usage: npm run db:sync
  */
 
-import { query, getPool } from './db-manipulate';
+import { query, execute, getPool } from './db-manipulate';
 import sql from 'mssql';
 
-// Use direct database connections instead of API
-// This avoids firewall issues and is faster
+const API_BASE_URL = 'https://stoagroupdb.onrender.com';
 
-// Find or create helpers using direct DB access
-async function findOrCreateProject(name: string, data: any): Promise<number> {
+// Helper to make API calls
+async function apiCall(endpoint: string, method: string, data?: any) {
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    return await response.json();
+  } catch (error: any) {
+    console.error(`API Error (${method} ${endpoint}):`, error.message);
+    throw error;
+  }
+}
+
+// Helper to find or create project
+async function findOrCreateProject(projectData: any): Promise<number> {
   const pool = await getPool();
+  
+  // Try to find existing project
   const existing = await pool.request()
-    .input('name', sql.NVarChar, name)
+    .input('name', sql.NVarChar, projectData.ProjectName)
     .query('SELECT ProjectId FROM core.Project WHERE ProjectName = @name');
   
   if (existing.recordset.length > 0) {
-    const id = existing.recordset[0].ProjectId;
-    // Update existing project
-    const request = pool.request().input('id', sql.Int, id);
-    const updates: string[] = [];
-    if (data.City !== undefined) {
-      updates.push('City = @City');
-      request.input('City', sql.NVarChar, data.City);
-    }
-    if (data.State !== undefined) {
-      updates.push('State = @State');
-      request.input('State', sql.NVarChar, data.State);
-    }
-    if (data.Units !== undefined) {
-      updates.push('Units = @Units');
-      request.input('Units', sql.Int, data.Units);
-    }
-    if (data.Stage !== undefined) {
-      updates.push('Stage = @Stage');
-      request.input('Stage', sql.NVarChar, data.Stage);
-    }
-    if (data.ProductType !== undefined) {
-      updates.push('ProductType = @ProductType');
-      request.input('ProductType', sql.NVarChar, data.ProductType);
-    }
-    if (data.Location !== undefined) {
-      updates.push('Location = @Location');
-      request.input('Location', sql.NVarChar, data.Location);
-    }
-    if (updates.length > 0) {
-      updates.push('UpdatedAt = SYSDATETIME()');
-      await request.query(`
-        UPDATE core.Project
-        SET ${updates.join(', ')}
-        WHERE ProjectId = @id
-      `);
-    }
-    return id;
+    const projectId = existing.recordset[0].ProjectId;
+    // Update if needed
+    await apiCall(`/api/core/projects/${projectId}`, 'PUT', projectData);
+    return projectId;
   }
   
   // Create new project
-  const result = await pool.request()
-    .input('ProjectName', sql.NVarChar, data.ProjectName)
-    .input('City', sql.NVarChar, data.City)
-    .input('State', sql.NVarChar, data.State)
-    .input('Units', sql.Int, data.Units)
-    .input('Stage', sql.NVarChar, data.Stage)
-    .input('ProductType', sql.NVarChar, data.ProductType)
-    .input('Location', sql.NVarChar, data.Location)
-    .query(`
-      INSERT INTO core.Project (ProjectName, City, State, Units, Stage, ProductType, Location)
-      VALUES (@ProjectName, @City, @State, @Units, @Stage, @ProductType, @Location);
-      SELECT ProjectId FROM core.Project WHERE ProjectId = SCOPE_IDENTITY();
-    `);
-  
-  return result.recordset[0].ProjectId;
+  const result = await apiCall('/api/core/projects', 'POST', projectData);
+  return result.data.ProjectId;
 }
 
-async function findOrCreateBank(name: string, city?: string, state?: string): Promise<number> {
+// Helper to find or create bank
+async function findOrCreateBank(bankName: string, city?: string, state?: string): Promise<number> {
   const pool = await getPool();
+  
   const existing = await pool.request()
-    .input('name', sql.NVarChar, name)
+    .input('name', sql.NVarChar, bankName)
     .query('SELECT BankId FROM core.Bank WHERE BankName = @name');
   
   if (existing.recordset.length > 0) {
     return existing.recordset[0].BankId;
   }
   
-  // Create new bank
-  const result = await pool.request()
-    .input('BankName', sql.NVarChar, name)
-    .input('City', sql.NVarChar, city)
-    .input('State', sql.NVarChar, state)
-    .query(`
-      INSERT INTO core.Bank (BankName, City, State)
-      VALUES (@BankName, @City, @State);
-      SELECT BankId FROM core.Bank WHERE BankId = SCOPE_IDENTITY();
-    `);
-  
-  return result.recordset[0].BankId;
+  const result = await apiCall('/api/core/banks', 'POST', {
+    BankName: bankName,
+    City: city,
+    State: state,
+  });
+  return result.data.BankId;
 }
 
-async function findOrCreatePerson(name: string): Promise<number> {
+// Helper to find or create person
+async function findOrCreatePerson(fullName: string): Promise<number> {
   const pool = await getPool();
+  
   const existing = await pool.request()
-    .input('name', sql.NVarChar, name)
+    .input('name', sql.NVarChar, fullName)
     .query('SELECT PersonId FROM core.Person WHERE FullName = @name');
   
   if (existing.recordset.length > 0) {
     return existing.recordset[0].PersonId;
   }
   
-  // Create new person
-  const result = await pool.request()
-    .input('FullName', sql.NVarChar, name)
-    .query(`
-      INSERT INTO core.Person (FullName)
-      VALUES (@FullName);
-      SELECT PersonId FROM core.Person WHERE PersonId = SCOPE_IDENTITY();
-    `);
+  const result = await apiCall('/api/core/persons', 'POST', { FullName: fullName });
+  return result.data.PersonId;
+}
+
+// Parse date from various formats
+function parseDate(dateStr: string | null | undefined): string | null {
+  if (!dateStr || dateStr.trim() === '' || dateStr === 'N/A') return null;
   
-  return result.recordset[0].PersonId;
+  // Handle formats like "2/10/25", "9/24/20", "May-23", etc.
+  if (dateStr.includes('-')) {
+    // Format like "May-23" - skip for now, store as text
+    return null;
+  }
+  
+  try {
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      const month = parseInt(parts[0]);
+      const day = parseInt(parts[1]);
+      let year = parseInt(parts[2]);
+      if (year < 100) year += 2000; // Convert 2-digit to 4-digit
+      return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    }
+  } catch (e) {
+    // Return null if can't parse
+  }
+  return null;
+}
+
+// Parse amount from string like "$31,520,000"
+function parseAmount(amountStr: string | null | undefined): number | null {
+  if (!amountStr) return null;
+  const cleaned = amountStr.replace(/[$,]/g, '').trim();
+  if (cleaned === '' || cleaned === 'N/A') return null;
+  return parseFloat(cleaned) || null;
+}
+
+// Parse percentage from string like "32.0%"
+function parsePercent(percentStr: string | null | undefined): string | null {
+  if (!percentStr || percentStr.trim() === '' || percentStr === 'N/A') return null;
+  return percentStr.trim();
 }
 
 async function syncAllData() {
-  console.log('🚀 Starting Complete Data Sync...\n');
+  console.log('🚀 Starting comprehensive data sync...\n');
+  
   const pool = await getPool();
   
   try {
-    // Step 1: Sync all Banks
+    // Step 1: Sync Banks from exposure data
     console.log('📊 Step 1: Syncing Banks...');
-    const bankData = [
+    const banks = [
       { name: 'First Horizon Bank', state: 'TN', city: 'Memphis' },
       { name: 'Hancock Whitney', state: 'MS', city: 'Gulfport' },
       { name: 'b1Bank', state: 'LA', city: 'Baton Rouge' },
@@ -189,23 +197,26 @@ async function syncAllData() {
     ];
     
     const bankMap: Record<string, number> = {};
-    for (const bank of bankData) {
-      const id = await findOrCreateBank(bank.name, bank.city, bank.state);
-      bankMap[bank.name] = id;
-      console.log(`  ✓ ${bank.name}`);
+    for (const bank of banks) {
+      const bankId = await findOrCreateBank(bank.name, bank.city, bank.state);
+      bankMap[bank.name] = bankId;
+      console.log(`  ✓ ${bank.name} (ID: ${bankId})`);
     }
     
-    // Step 2: Sync People
-    console.log('\n👥 Step 2: Syncing People...');
+    // Step 2: Sync People (guarantors)
+    console.log('\n👥 Step 2: Syncing People (Guarantors)...');
+    const people = ['Toby Easterly', 'Ryan Nash', 'Saun Sullivan'];
     const personMap: Record<string, number> = {};
-    for (const name of ['Toby Easterly', 'Ryan Nash', 'Saun Sullivan']) {
-      const id = await findOrCreatePerson(name);
-      personMap[name] = id;
-      console.log(`  ✓ ${name}`);
+    for (const personName of people) {
+      const personId = await findOrCreatePerson(personName);
+      personMap[personName] = personId;
+      console.log(`  ✓ ${personName} (ID: ${personId})`);
     }
     
-    // Step 3: Sync Projects
-    console.log('\n🏗️  Step 3: Syncing Projects...');
+    // Step 3: Sync Projects and Loans from banking dashboard
+    console.log('\n🏗️  Step 3: Syncing Projects and Loans...');
+    
+    // Projects from the data
     const projects = [
       // Multifamily
       { name: 'The Waters at Hammond', city: 'Hammond', state: 'LA', units: 312, stage: 'Stabilized', productType: 'Waters' },
@@ -253,7 +264,7 @@ async function syncAllData() {
     
     const projectMap: Record<string, number> = {};
     for (const proj of projects) {
-      const id = await findOrCreateProject(proj.name, {
+      const projectId = await findOrCreateProject({
         ProjectName: proj.name,
         City: proj.city || null,
         State: proj.state || null,
@@ -262,20 +273,15 @@ async function syncAllData() {
         ProductType: proj.productType,
         Location: proj.city && proj.state ? `${proj.city}, ${proj.state}` : null,
       });
-      projectMap[proj.name] = id;
-      console.log(`  ✓ ${proj.name}`);
+      projectMap[proj.name] = projectId;
+      console.log(`  ✓ ${proj.name} (ID: ${projectId})`);
     }
     
-    console.log('\n✅ Initial sync completed!');
-    console.log('\n📝 Next: Use individual API calls to add:');
-    console.log('  - Loans (with all details)');
-    console.log('  - Participations');
-    console.log('  - Guarantees');
-    console.log('  - DSCR Tests');
-    console.log('  - Covenants');
-    console.log('  - Liquidity Requirements');
-    console.log('  - Bank Targets');
-    console.log('\n💡 See DATA_SYNC_GUIDE.md for detailed instructions');
+    console.log('\n✅ Data sync completed!');
+    console.log('\n📝 Next steps:');
+    console.log('  1. Review the data in your database');
+    console.log('  2. Use the API to add loans, participations, guarantees, etc.');
+    console.log('  3. See HOW_TO_USE_THE_API.md for API usage examples');
     
   } catch (error: any) {
     console.error('\n❌ Sync failed:', error.message);

@@ -234,6 +234,19 @@ export const getDSCRTestById = async (req: Request, res: Response, next: NextFun
   }
 };
 
+export const getDSCRTestsByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query('SELECT * FROM banking.DSCRTest WHERE ProjectId = @projectId ORDER BY TestNumber');
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createDSCRTest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue } = req.body;
@@ -364,6 +377,19 @@ export const getParticipationById = async (req: Request, res: Response, next: Ne
     }
     
     res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getParticipationsByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query('SELECT * FROM banking.Participation WHERE ProjectId = @projectId ORDER BY ParticipationId');
+    res.json({ success: true, data: result.recordset });
   } catch (error) {
     next(error);
   }
@@ -500,6 +526,19 @@ export const getGuaranteeById = async (req: Request, res: Response, next: NextFu
   }
 };
 
+export const getGuaranteesByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query('SELECT * FROM banking.Guarantee WHERE ProjectId = @projectId ORDER BY GuaranteeId');
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createGuarantee = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { ProjectId, LoanId, PersonId, GuaranteePercent, GuaranteeAmount, Notes } = req.body;
@@ -597,6 +636,38 @@ export const getAllCovenants = async (req: Request, res: Response, next: NextFun
   try {
     const pool = await getConnection();
     const result = await pool.request().query('SELECT * FROM banking.Covenant ORDER BY ProjectId, CovenantDate');
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCovenantById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM banking.Covenant WHERE CovenantId = @id');
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Covenant not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCovenantsByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query('SELECT * FROM banking.Covenant WHERE ProjectId = @projectId ORDER BY CovenantId');
     res.json({ success: true, data: result.recordset });
   } catch (error) {
     next(error);
@@ -709,6 +780,38 @@ export const getAllLiquidityRequirements = async (req: Request, res: Response, n
   }
 };
 
+export const getLiquidityRequirementById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM banking.LiquidityRequirement WHERE LiquidityRequirementId = @id');
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Liquidity Requirement not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getLiquidityRequirementsByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query('SELECT * FROM banking.LiquidityRequirement WHERE ProjectId = @projectId ORDER BY LiquidityRequirementId');
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createLiquidityRequirement = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { ProjectId, LoanId, TotalAmount, LendingBankAmount, Notes } = req.body;
@@ -814,6 +917,25 @@ export const getAllBankTargets = async (req: Request, res: Response, next: NextF
       ORDER BY bt.BankTargetId
     `);
     res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getBankTargetById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM banking.BankTarget WHERE BankTargetId = @id');
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Bank Target not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
   } catch (error) {
     next(error);
   }
