@@ -184,6 +184,8 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
     const loanClosingDate = parseDate(row[7]);
     const birthOrder = row[0] ? parseInt(row[0]) || null : null;
     
+    let loanId: number | null = null;
+    
     if (loanAmount && loanClosingDate) {
       const result = await pool.request()
         .input('ProjectId', sql.Int, projectId)
@@ -243,11 +245,14 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
                     @PermanentCloseDate, @PermanentLoanAmount);
           SELECT LoanId FROM banking.Loan WHERE ProjectId = @ProjectId AND LoanPhase = 'Construction';
         `);
-      loanId = result.recordset[0]?.LoanId;
-      loansCreated++;
+      loanId = result.recordset[0]?.LoanId || null;
+      if (loanId) loansCreated++;
+    } else {
+      // Try to get existing loan even if we don't have amount/date
+      loanId = await getLoanId(pool, projectId);
     }
     
-    // Add DSCR Tests
+    // Add DSCR Tests (only if we have a loan)
     if (loanId) {
       // 1st DSCR Test
       if (row[18] && row[18].trim() !== '') {
