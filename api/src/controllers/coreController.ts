@@ -49,7 +49,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
     }
 
     const pool = await getConnection();
-    const result = await pool.request()
+    const insertResult = await pool.request()
       .input('ProjectName', sql.NVarChar, ProjectName)
       .input('City', sql.NVarChar, City)
       .input('State', sql.NVarChar, State)
@@ -61,9 +61,15 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
       .input('EstimatedConstructionStartDate', sql.Date, EstimatedConstructionStartDate)
       .query(`
         INSERT INTO core.Project (ProjectName, City, State, Region, Location, Units, ProductType, Stage, EstimatedConstructionStartDate)
-        OUTPUT INSERTED.*
-        VALUES (@ProjectName, @City, @State, @Region, @Location, @Units, @ProductType, @Stage, @EstimatedConstructionStartDate)
+        VALUES (@ProjectName, @City, @State, @Region, @Location, @Units, @ProductType, @Stage, @EstimatedConstructionStartDate);
+        SELECT SCOPE_IDENTITY() AS ProjectId;
       `);
+
+    const projectId = insertResult.recordset[0].ProjectId;
+    
+    const result = await pool.request()
+      .input('id', sql.Int, projectId)
+      .query('SELECT * FROM core.Project WHERE ProjectId = @id');
 
     res.status(201).json({ success: true, data: result.recordset[0] });
   } catch (error: any) {
@@ -107,16 +113,20 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
             Stage = @Stage,
             EstimatedConstructionStartDate = @EstimatedConstructionStartDate,
             UpdatedAt = SYSDATETIME()
-        OUTPUT INSERTED.*
         WHERE ProjectId = @id
       `);
 
-    if (result.recordset.length === 0) {
+    if (result.rowsAffected[0] === 0) {
       res.status(404).json({ success: false, error: { message: 'Project not found' } });
       return;
     }
 
-    res.json({ success: true, data: result.recordset[0] });
+    // Get the updated record
+    const updated = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM core.Project WHERE ProjectId = @id');
+
+    res.json({ success: true, data: updated.recordset[0] });
   } catch (error: any) {
     if (error.number === 2627) {
       res.status(409).json({ success: false, error: { message: 'Project with this name already exists' } });
