@@ -178,6 +178,72 @@ export const updateLoan = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+/**
+ * Update loan by ProjectId - convenience function for Domo
+ * Updates the construction loan for a project (or first loan if multiple)
+ */
+export const updateLoanByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const loanData = req.body;
+
+    const pool = await getConnection();
+    
+    // First, find the loan(s) for this project
+    // Prefer construction loan, otherwise first loan
+    const findLoan = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query(`
+        SELECT TOP 1 LoanId 
+        FROM banking.Loan 
+        WHERE ProjectId = @projectId 
+        ORDER BY CASE WHEN LoanPhase = 'Construction' THEN 0 ELSE 1 END, LoanId
+      `);
+
+    if (findLoan.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'No loan found for this project' } });
+      return;
+    }
+
+    const loanId = findLoan.recordset[0].LoanId;
+    
+    // Now update using the same logic as updateLoan
+    const request = pool.request().input('id', sql.Int, loanId);
+
+    const fields: string[] = [];
+    Object.keys(loanData).forEach((key) => {
+      if (key !== 'LoanId' && loanData[key] !== undefined) {
+        fields.push(`${key} = @${key}`);
+        if (typeof loanData[key] === 'number' && key.includes('Amount')) {
+          request.input(key, sql.Decimal(18, 2), loanData[key]);
+        } else if (key.includes('Date') && !key.includes('Completion') && !key.includes('Completed')) {
+          request.input(key, sql.Date, loanData[key]);
+        } else if (key === 'Notes') {
+          request.input(key, sql.NVarChar(sql.MAX), loanData[key]);
+        } else {
+          request.input(key, sql.NVarChar, loanData[key]);
+        }
+      }
+    });
+
+    if (fields.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'No fields to update' } });
+      return;
+    }
+
+    const result = await request.query(`
+      UPDATE banking.Loan
+      SET ${fields.join(', ')}
+      WHERE LoanId = @id;
+      SELECT * FROM banking.Loan WHERE LoanId = @id;
+    `);
+
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    next(error);
+  }
+};
+
 export const deleteLoan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;

@@ -9,6 +9,7 @@ router.get('/loans/:id', bankingController.getLoanById);
 router.get('/loans/project/:projectId', bankingController.getLoansByProject);
 router.post('/loans', bankingController.createLoan);
 router.put('/loans/:id', bankingController.updateLoan);
+router.put('/loans/project/:projectId', bankingController.updateLoanByProject); // Convenience: update by ProjectId
 
 // DSCR Test routes
 router.get('/dscr-tests', bankingController.getAllDSCRTests);

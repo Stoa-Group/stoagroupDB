@@ -1,10 +1,12 @@
 /**
  * Stoa Group Database API Client
  * 
- * Copy this file to your Domo dashboard or frontend project
- * to easily interact with the API.
+ * Use this file in Domo Custom Scripts to create and update data via the Render API.
  * 
  * API URL: https://stoagroupdb.onrender.com
+ * 
+ * IMPORTANT: This file focuses on POST (create) and PUT (update) endpoints
+ * for modifying data from Domo. All endpoints use the Render API.
  */
 
 const API_BASE_URL = 'https://stoagroupdb.onrender.com';
@@ -134,6 +136,15 @@ async function createLoan(loanData) {
 
 async function updateLoan(loanId, updates) {
   return apiRequest(`/api/banking/loans/${loanId}`, 'PUT', updates);
+}
+
+/**
+ * Update loan by ProjectId - convenience function for Domo
+ * Updates the construction loan (or first loan) for a project
+ * Example: updateLoanByProject(4, { Spread: "0.75%" })
+ */
+async function updateLoanByProject(projectId, updates) {
+  return apiRequest(`/api/banking/loans/project/${projectId}`, 'PUT', updates);
 }
 
 // Participations
@@ -373,46 +384,64 @@ async function getAPIDocs() {
 // EXPORT FOR USE IN DOMO OR OTHER ENVIRONMENTS
 // ============================================================
 
-// For Domo Custom Scripts - functions are available globally
+// ============================================================
+// DOMO INTEGRATION
+// ============================================================
+// 
+// For Domo Custom Scripts:
+// 1. Copy this entire file into your Domo Custom Script
+// 2. Use the create/update functions to modify data
+// 3. All functions use the Render API: https://stoagroupdb.onrender.com
+//
+// Available CREATE functions (POST):
+//   - createProject, createBank, createPerson, createEquityPartner
+//   - createLoan, createParticipation, createGuarantee, createDSCRTest
+//   - createCovenant, createLiquidityRequirement, createBankTarget
+//   - createEquityCommitment, createUnderContract, createCommercialListed
+//   - createCommercialAcreage, createClosedProperty
+//
+// Available UPDATE functions (PUT):
+//   - updateProject, updateBank, updatePerson, updateEquityPartner
+//   - updateLoan, updateParticipation, updateGuarantee, updateDSCRTest
+//   - updateCovenant, updateLiquidityRequirement, updateBankTarget
+//   - updateEquityCommitment, updateUnderContract, updateCommercialListed
+//   - updateCommercialAcreage, updateClosedProperty
+//
 // For Node.js/ES6 modules, uncomment:
 // export {
-//   // Core
-//   getAllProjects, getProjectById, createProject, updateProject,
-//   getAllBanks, getBankById, createBank, updateBank,
-//   getAllPersons, getPersonById, createPerson, updatePerson,
-//   getAllEquityPartners, getEquityPartnerById, createEquityPartner, updateEquityPartner,
-//   // Banking
-//   getAllLoans, getLoanById, getLoansByProject, createLoan, updateLoan,
-//   getAllParticipations, getParticipationById, getParticipationsByProject, createParticipation, updateParticipation,
-//   getAllGuarantees, getGuaranteeById, getGuaranteesByProject, createGuarantee, updateGuarantee,
-//   getAllDSCRTests, getDSCRTestById, getDSCRTestsByProject, createDSCRTest, updateDSCRTest,
-//   getAllCovenants, getCovenantById, getCovenantsByProject, createCovenant, updateCovenant,
-//   getAllLiquidityRequirements, getLiquidityRequirementById, getLiquidityRequirementsByProject, createLiquidityRequirement, updateLiquidityRequirement,
-//   getAllBankTargets, getBankTargetById, createBankTarget, updateBankTarget,
-//   getAllEquityCommitments, getEquityCommitmentById, getEquityCommitmentsByProject, createEquityCommitment, updateEquityCommitment,
-//   // Pipeline
-//   getAllUnderContracts, getUnderContractById, createUnderContract, updateUnderContract,
-//   getAllCommercialListed, getCommercialListedById, createCommercialListed, updateCommercialListed,
-//   getAllCommercialAcreage, getCommercialAcreageById, createCommercialAcreage, updateCommercialAcreage,
-//   getAllClosedProperties, getClosedPropertyById, createClosedProperty, updateClosedProperty,
+//   // Core - Create & Update
+//   createProject, updateProject,
+//   createBank, updateBank,
+//   createPerson, updatePerson,
+//   createEquityPartner, updateEquityPartner,
+//   // Banking - Create & Update
+//   createLoan, updateLoan,
+//   createParticipation, updateParticipation,
+//   createGuarantee, updateGuarantee,
+//   createDSCRTest, updateDSCRTest,
+//   createCovenant, updateCovenant,
+//   createLiquidityRequirement, updateLiquidityRequirement,
+//   createBankTarget, updateBankTarget,
+//   createEquityCommitment, updateEquityCommitment,
+//   // Pipeline - Create & Update
+//   createUnderContract, updateUnderContract,
+//   createCommercialListed, updateCommercialListed,
+//   createCommercialAcreage, updateCommercialAcreage,
+//   createClosedProperty, updateClosedProperty,
 //   // Utility
 //   checkHealth, getAPIDocs
 // };
 
 // ============================================================
-// USAGE EXAMPLES
+// DOMO USAGE EXAMPLES - CREATE & UPDATE DATA
 // ============================================================
 
 /*
-// Example 1: Get all projects
-const projects = await getAllProjects();
-console.log('All projects:', projects.data);
+// ============================================================
+// CORE ENTITIES - CREATE & UPDATE
+// ============================================================
 
-// Example 2: Get a specific project
-const project = await getProjectById(1);
-console.log('Project:', project.data);
-
-// Example 3: Create a project
+// Create a new project
 const newProject = await createProject({
   ProjectName: "The Heights at Picardy",
   City: "Baton Rouge",
@@ -421,46 +450,225 @@ const newProject = await createProject({
   Location: "Baton Rouge, LA",
   Units: 232,
   ProductType: "Heights",
-  Stage: "Started"
+  Stage: "Under Construction"
 });
-console.log('Created project:', newProject.data);
+console.log('Created project ID:', newProject.data.ProjectId);
 
-// Example 4: Update project units
+// Update a project
 const updated = await updateProject(1, {
   Units: 250,
   Stage: "Stabilized"
 });
-console.log('Updated project:', updated.data);
 
-// Example 5: Get all loans for a project
-const loans = await getLoansByProject(1);
-console.log('Project loans:', loans.data);
+// Create a bank
+const newBank = await createBank({
+  BankName: "First Horizon Bank",
+  City: "Memphis",
+  State: "TN"
+});
 
-// Example 6: Get all participations for a project
-const participations = await getParticipationsByProject(1);
-console.log('Project participations:', participations.data);
+// Update a bank
+await updateBank(1, {
+  Notes: "Updated notes"
+});
 
-// Example 7: Get all guarantees for a project
-const guarantees = await getGuaranteesByProject(1);
-console.log('Project guarantees:', guarantees.data);
+// ============================================================
+// BANKING - CREATE & UPDATE LOANS
+// ============================================================
 
-// Example 8: Create a loan
+// Create a construction loan
 const newLoan = await createLoan({
   ProjectId: 1,
-  LoanPhase: "Construction",
+  BirthOrder: 12,
   LoanType: "LOC - Construction",
-  LenderId: 5,
-  LoanAmount: 15000000,
-  LoanClosingDate: "2024-01-15",
-  MaturityDate: "2025-12-31"
+  Borrower: "The Waters at Settlers Trace",
+  LoanPhase: "Construction",
+  LenderId: 4, // b1Bank
+  LoanAmount: 49996842,
+  LoanClosingDate: "2022-08-24",
+  IOMaturityDate: "2025-08-24",
+  FixedOrFloating: "Floating",
+  IndexName: "WSJ Prime",
+  Spread: "0.50%",
+  PermPhaseMaturity: "2028-08-24",
+  PermPhaseInterestRate: "3yr US Treasury + 250 - 25yr am",
+  ConstructionCompletionDate: "Feb-10",
+  LeaseUpCompletedDate: "Dec-25",
+  PermanentCloseDate: "2026-06-30",
+  PermanentLoanAmount: 54163986
 });
-console.log('Created loan:', newLoan.data);
+console.log('Created loan ID:', newLoan.data.LoanId);
 
-// Example 9: Get all banks
-const banks = await getAllBanks();
-console.log('All banks:', banks.data);
+// Update a loan by LoanId
+await updateLoan(1, {
+  LoanAmount: 50000000,
+  Spread: "0.75%"
+});
 
-// Example 10: Check API health
+// Update loan by ProjectId (easier for Domo!)
+// Just update the interest rate for a project without needing LoanId
+await updateLoanByProject(4, {
+  Spread: "0.75%",
+  InterestRate: "SOFR + 0.75%"
+});
+
+// ============================================================
+// BANKING - CREATE & UPDATE PARTICIPATIONS
+// ============================================================
+
+// Create a participation
+const newParticipation = await createParticipation({
+  ProjectId: 4,
+  LoanId: 4,
+  BankId: 4, // b1Bank
+  ParticipationPercent: "32.0%",
+  ExposureAmount: 15998489,
+  PaidOff: false
+});
+
+// Update a participation
+await updateParticipation(1, {
+  ExposureAmount: 16000000,
+  PaidOff: true
+});
+
+// ============================================================
+// BANKING - CREATE & UPDATE GUARANTEES
+// ============================================================
+
+// Create a guarantee
+const newGuarantee = await createGuarantee({
+  ProjectId: 4,
+  LoanId: 4,
+  PersonId: 1, // Toby Easterly
+  GuaranteePercent: 100,
+  GuaranteeAmount: 45698
+});
+
+// Update a guarantee
+await updateGuarantee(1, {
+  GuaranteePercent: 50,
+  GuaranteeAmount: 22849
+});
+
+// ============================================================
+// BANKING - CREATE & UPDATE DSCR TESTS
+// ============================================================
+
+// Create a DSCR test
+const newDSCRTest = await createDSCRTest({
+  ProjectId: 4,
+  LoanId: 4,
+  TestNumber: 1,
+  TestDate: "2025-09-30",
+  ProjectedInterestRate: "8.00%",
+  Requirement: 1.00,
+  ProjectedValue: "0.41"
+});
+
+// Update a DSCR test
+await updateDSCRTest(1, {
+  ProjectedValue: "0.50"
+});
+
+// ============================================================
+// BANKING - CREATE & UPDATE COVENANTS
+// ============================================================
+
+// Create a covenant
+const newCovenant = await createCovenant({
+  ProjectId: 4,
+  LoanId: 4,
+  CovenantType: "Occupancy",
+  CovenantDate: "2027-03-31",
+  Requirement: "50%",
+  ProjectedValue: "76.5%",
+  Notes: "Occupancy covenant"
+});
+
+// Update a covenant
+await updateCovenant(1, {
+  ProjectedValue: "80%"
+});
+
+// ============================================================
+// BANKING - CREATE & UPDATE LIQUIDITY REQUIREMENTS
+// ============================================================
+
+// Create a liquidity requirement
+const newLiquidity = await createLiquidityRequirement({
+  ProjectId: 4,
+  LoanId: 4,
+  TotalAmount: 5000000,
+  LendingBankAmount: 2000000
+});
+
+// Update a liquidity requirement
+await updateLiquidityRequirement(1, {
+  TotalAmount: 6000000
+});
+
+// ============================================================
+// BANKING - CREATE & UPDATE BANK TARGETS
+// ============================================================
+
+// Create a bank target
+const newBankTarget = await createBankTarget({
+  BankId: 6, // Wells Fargo
+  AssetsText: "$1,743,283,000",
+  City: "Sioux Falls",
+  State: "SD",
+  ExposureWithStoa: 41580000,
+  ContactText: "Brady Hutka",
+  Comments: "3/16/21: Showed no interest"
+});
+
+// Update a bank target
+await updateBankTarget(1, {
+  ExposureWithStoa: 50000000,
+  Comments: "Updated comments"
+});
+
+// ============================================================
+// BANKING - CREATE & UPDATE EQUITY COMMITMENTS
+// ============================================================
+
+// Create an equity commitment
+const newEquityCommitment = await createEquityCommitment({
+  ProjectId: 1,
+  EquityPartnerId: 1,
+  EquityType: "Pref",
+  Amount: 5000000,
+  FundingDate: "2024-01-15"
+});
+
+// Update an equity commitment
+await updateEquityCommitment(1, {
+  Amount: 6000000
+});
+
+// ============================================================
+// PIPELINE - CREATE & UPDATE
+// ============================================================
+
+// Create under contract
+const newUnderContract = await createUnderContract({
+  ProjectId: 1,
+  Location: "Baton Rouge, LA",
+  Units: 300,
+  Price: 10000000
+});
+
+// Update under contract
+await updateUnderContract(1, {
+  Price: 11000000
+});
+
+// ============================================================
+// UTILITY
+// ============================================================
+
+// Check API health
 const health = await checkHealth();
 console.log('API Status:', health.message);
 */
