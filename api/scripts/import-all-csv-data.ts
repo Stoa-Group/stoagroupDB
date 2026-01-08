@@ -176,60 +176,75 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
       continue;
     }
     
-    // Get or create loan
-    let loanId = await getLoanId(pool, projectId);
+    // Update or create loan
+    const lenderName = row[5]?.trim();
+    const lenderId = lenderName ? await getBankId(pool, lenderName) : null;
     
-    if (!loanId) {
-      // Create loan
-      const lenderName = row[5]?.trim();
-      const lenderId = lenderName ? await getBankId(pool, lenderName) : null;
-      
-      const loanAmount = parseAmount(row[6]);
-      const loanClosingDate = parseDate(row[7]);
-      const birthOrder = row[0] ? parseInt(row[0]) || null : null;
-      
-      if (loanAmount && loanClosingDate) {
-        const result = await pool.request()
-          .input('ProjectId', sql.Int, projectId)
-          .input('BirthOrder', sql.Int, birthOrder)
-          .input('LoanType', sql.NVarChar, row[2]?.trim() || null)
-          .input('Borrower', sql.NVarChar, borrower)
-          .input('LoanPhase', sql.NVarChar, 'Construction')
-          .input('LenderId', sql.Int, lenderId)
-          .input('LoanAmount', sql.Decimal(18, 2), loanAmount)
-          .input('LoanClosingDate', sql.Date, loanClosingDate)
-          .input('FixedOrFloating', sql.NVarChar, row[11]?.trim() || null)
-          .input('IndexName', sql.NVarChar, row[12]?.trim() || null)
-          .input('Spread', sql.NVarChar, parsePercent(row[13]))
-          .input('MiniPermMaturity', sql.Date, parseDate(row[14]))
-          .input('MiniPermInterestRate', sql.NVarChar, row[15]?.trim() || null)
-          .input('PermPhaseMaturity', sql.Date, parseDate(row[16]))
-          .input('PermPhaseInterestRate', sql.NVarChar, row[17]?.trim() || null)
-          .input('ConstructionCompletionDate', sql.NVarChar, row[8]?.trim() || null)
-          .input('LeaseUpCompletedDate', sql.NVarChar, row[9]?.trim() || null)
-          .input('IOMaturityDate', sql.Date, parseDate(row[10]))
-          .input('PermanentCloseDate', sql.Date, parseDate(row[35]))
-          .input('PermanentLoanAmount', sql.Decimal(18, 2), parseAmount(row[37]))
-          .query(`
-            INSERT INTO banking.Loan (
-              ProjectId, BirthOrder, LoanType, Borrower, LoanPhase, LenderId,
-              LoanAmount, LoanClosingDate, FixedOrFloating, IndexName, Spread,
-              MiniPermMaturity, MiniPermInterestRate, PermPhaseMaturity, PermPhaseInterestRate,
-              ConstructionCompletionDate, LeaseUpCompletedDate, IOMaturityDate,
-              PermanentCloseDate, PermanentLoanAmount
-            )
-            VALUES (
-              @ProjectId, @BirthOrder, @LoanType, @Borrower, @LoanPhase, @LenderId,
-              @LoanAmount, @LoanClosingDate, @FixedOrFloating, @IndexName, @Spread,
-              @MiniPermMaturity, @MiniPermInterestRate, @PermPhaseMaturity, @PermPhaseInterestRate,
-              @ConstructionCompletionDate, @LeaseUpCompletedDate, @IOMaturityDate,
-              @PermanentCloseDate, @PermanentLoanAmount
-            );
-            SELECT SCOPE_IDENTITY() AS LoanId;
-          `);
-        loanId = result.recordset[0].LoanId;
-        loansCreated++;
-      }
+    const loanAmount = parseAmount(row[6]);
+    const loanClosingDate = parseDate(row[7]);
+    const birthOrder = row[0] ? parseInt(row[0]) || null : null;
+    
+    if (loanAmount && loanClosingDate) {
+      const result = await pool.request()
+        .input('ProjectId', sql.Int, projectId)
+        .input('BirthOrder', sql.Int, birthOrder)
+        .input('LoanType', sql.NVarChar, row[2]?.trim() || null)
+        .input('Borrower', sql.NVarChar, borrower)
+        .input('LoanPhase', sql.NVarChar, 'Construction')
+        .input('LenderId', sql.Int, lenderId)
+        .input('LoanAmount', sql.Decimal(18, 2), loanAmount)
+        .input('LoanClosingDate', sql.Date, loanClosingDate)
+        .input('FixedOrFloating', sql.NVarChar, row[11]?.trim() || null)
+        .input('IndexName', sql.NVarChar, row[12]?.trim() || null)
+        .input('Spread', sql.NVarChar, parsePercent(row[13]))
+        .input('MiniPermMaturity', sql.Date, parseDate(row[14]))
+        .input('MiniPermInterestRate', sql.NVarChar, row[15]?.trim() || null)
+        .input('PermPhaseMaturity', sql.Date, parseDate(row[16]))
+        .input('PermPhaseInterestRate', sql.NVarChar, row[17]?.trim() || null)
+        .input('ConstructionCompletionDate', sql.NVarChar, row[8]?.trim() || null)
+        .input('LeaseUpCompletedDate', sql.NVarChar, row[9]?.trim() || null)
+        .input('IOMaturityDate', sql.Date, parseDate(row[10]))
+        .input('PermanentCloseDate', sql.Date, parseDate(row[35]))
+        .input('PermanentLoanAmount', sql.Decimal(18, 2), parseAmount(row[37]))
+        .query(`
+          MERGE banking.Loan AS target
+          USING (SELECT @ProjectId AS ProjectId) AS source
+          ON target.ProjectId = source.ProjectId AND target.LoanPhase = 'Construction'
+          WHEN MATCHED THEN
+            UPDATE SET
+              BirthOrder = @BirthOrder,
+              LoanType = @LoanType,
+              Borrower = @Borrower,
+              LenderId = @LenderId,
+              LoanAmount = @LoanAmount,
+              LoanClosingDate = @LoanClosingDate,
+              FixedOrFloating = @FixedOrFloating,
+              IndexName = @IndexName,
+              Spread = @Spread,
+              MiniPermMaturity = @MiniPermMaturity,
+              MiniPermInterestRate = @MiniPermInterestRate,
+              PermPhaseMaturity = @PermPhaseMaturity,
+              PermPhaseInterestRate = @PermPhaseInterestRate,
+              ConstructionCompletionDate = @ConstructionCompletionDate,
+              LeaseUpCompletedDate = @LeaseUpCompletedDate,
+              IOMaturityDate = @IOMaturityDate,
+              PermanentCloseDate = @PermanentCloseDate,
+              PermanentLoanAmount = @PermanentLoanAmount
+          WHEN NOT MATCHED THEN
+            INSERT (ProjectId, BirthOrder, LoanType, Borrower, LoanPhase, LenderId,
+                    LoanAmount, LoanClosingDate, FixedOrFloating, IndexName, Spread,
+                    MiniPermMaturity, MiniPermInterestRate, PermPhaseMaturity, PermPhaseInterestRate,
+                    ConstructionCompletionDate, LeaseUpCompletedDate, IOMaturityDate,
+                    PermanentCloseDate, PermanentLoanAmount)
+            VALUES (@ProjectId, @BirthOrder, @LoanType, @Borrower, @LoanPhase, @LenderId,
+                    @LoanAmount, @LoanClosingDate, @FixedOrFloating, @IndexName, @Spread,
+                    @MiniPermMaturity, @MiniPermInterestRate, @PermPhaseMaturity, @PermPhaseInterestRate,
+                    @ConstructionCompletionDate, @LeaseUpCompletedDate, @IOMaturityDate,
+                    @PermanentCloseDate, @PermanentLoanAmount);
+          SELECT LoanId FROM banking.Loan WHERE ProjectId = @ProjectId AND LoanPhase = 'Construction';
+        `);
+      loanId = result.recordset[0]?.LoanId;
+      loansCreated++;
     }
     
     // Add DSCR Tests
@@ -247,9 +262,19 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
             .input('Requirement', sql.Decimal(10, 2), parseAmount(row[20]))
             .input('ProjectedValue', sql.NVarChar, row[21]?.trim() || null)
             .query(`
-              IF NOT EXISTS (SELECT 1 FROM banking.DSCRTest WHERE ProjectId = @ProjectId AND TestNumber = 1)
-              INSERT INTO banking.DSCRTest (ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue)
-              VALUES (@ProjectId, @LoanId, @TestNumber, @TestDate, @ProjectedInterestRate, @Requirement, @ProjectedValue)
+              MERGE banking.DSCRTest AS target
+              USING (SELECT @ProjectId AS ProjectId, @TestNumber AS TestNumber) AS source
+              ON target.ProjectId = source.ProjectId AND target.TestNumber = source.TestNumber
+              WHEN MATCHED THEN
+                UPDATE SET
+                  LoanId = @LoanId,
+                  TestDate = @TestDate,
+                  ProjectedInterestRate = @ProjectedInterestRate,
+                  Requirement = @Requirement,
+                  ProjectedValue = @ProjectedValue
+              WHEN NOT MATCHED THEN
+                INSERT (ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue)
+                VALUES (@ProjectId, @LoanId, @TestNumber, @TestDate, @ProjectedInterestRate, @Requirement, @ProjectedValue);
             `);
           dscrTestsCreated++;
         }
@@ -268,9 +293,19 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
             .input('Requirement', sql.Decimal(10, 2), parseAmount(row[24]))
             .input('ProjectedValue', sql.NVarChar, row[25]?.trim() || null)
             .query(`
-              IF NOT EXISTS (SELECT 1 FROM banking.DSCRTest WHERE ProjectId = @ProjectId AND TestNumber = 2)
-              INSERT INTO banking.DSCRTest (ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue)
-              VALUES (@ProjectId, @LoanId, @TestNumber, @TestDate, @ProjectedInterestRate, @Requirement, @ProjectedValue)
+              MERGE banking.DSCRTest AS target
+              USING (SELECT @ProjectId AS ProjectId, @TestNumber AS TestNumber) AS source
+              ON target.ProjectId = source.ProjectId AND target.TestNumber = source.TestNumber
+              WHEN MATCHED THEN
+                UPDATE SET
+                  LoanId = @LoanId,
+                  TestDate = @TestDate,
+                  ProjectedInterestRate = @ProjectedInterestRate,
+                  Requirement = @Requirement,
+                  ProjectedValue = @ProjectedValue
+              WHEN NOT MATCHED THEN
+                INSERT (ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue)
+                VALUES (@ProjectId, @LoanId, @TestNumber, @TestDate, @ProjectedInterestRate, @Requirement, @ProjectedValue);
             `);
           dscrTestsCreated++;
         }
@@ -289,9 +324,19 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
             .input('Requirement', sql.Decimal(10, 2), parseAmount(row[28]))
             .input('ProjectedValue', sql.NVarChar, row[29]?.trim() || null)
             .query(`
-              IF NOT EXISTS (SELECT 1 FROM banking.DSCRTest WHERE ProjectId = @ProjectId AND TestNumber = 3)
-              INSERT INTO banking.DSCRTest (ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue)
-              VALUES (@ProjectId, @LoanId, @TestNumber, @TestDate, @ProjectedInterestRate, @Requirement, @ProjectedValue)
+              MERGE banking.DSCRTest AS target
+              USING (SELECT @ProjectId AS ProjectId, @TestNumber AS TestNumber) AS source
+              ON target.ProjectId = source.ProjectId AND target.TestNumber = source.TestNumber
+              WHEN MATCHED THEN
+                UPDATE SET
+                  LoanId = @LoanId,
+                  TestDate = @TestDate,
+                  ProjectedInterestRate = @ProjectedInterestRate,
+                  Requirement = @Requirement,
+                  ProjectedValue = @ProjectedValue
+              WHEN NOT MATCHED THEN
+                INSERT (ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue)
+                VALUES (@ProjectId, @LoanId, @TestNumber, @TestDate, @ProjectedInterestRate, @Requirement, @ProjectedValue);
             `);
           dscrTestsCreated++;
         }
@@ -307,9 +352,17 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
           .input('TotalAmount', sql.Decimal(18, 2), totalLiquidity)
           .input('LendingBankAmount', sql.Decimal(18, 2), lendingBankLiquidity)
           .query(`
-            IF NOT EXISTS (SELECT 1 FROM banking.LiquidityRequirement WHERE ProjectId = @ProjectId)
-            INSERT INTO banking.LiquidityRequirement (ProjectId, LoanId, TotalAmount, LendingBankAmount)
-            VALUES (@ProjectId, @LoanId, @TotalAmount, @LendingBankAmount)
+            MERGE banking.LiquidityRequirement AS target
+            USING (SELECT @ProjectId AS ProjectId) AS source
+            ON target.ProjectId = source.ProjectId
+            WHEN MATCHED THEN
+              UPDATE SET
+                LoanId = @LoanId,
+                TotalAmount = @TotalAmount,
+                LendingBankAmount = @LendingBankAmount
+            WHEN NOT MATCHED THEN
+              INSERT (ProjectId, LoanId, TotalAmount, LendingBankAmount)
+              VALUES (@ProjectId, @LoanId, @TotalAmount, @LendingBankAmount);
           `);
         liquidityCreated++;
       }
@@ -325,19 +378,28 @@ async function importBankingDashboard(pool: sql.ConnectionPool, csvPath: string)
           .input('Requirement', sql.NVarChar, row[33]?.trim() || null)
           .input('ProjectedValue', sql.NVarChar, row[34]?.trim() || null)
           .query(`
-            IF NOT EXISTS (SELECT 1 FROM banking.Covenant WHERE ProjectId = @ProjectId AND CovenantType = 'Occupancy')
-            INSERT INTO banking.Covenant (ProjectId, LoanId, CovenantType, CovenantDate, Requirement, ProjectedValue)
-            VALUES (@ProjectId, @LoanId, @CovenantType, @CovenantDate, @Requirement, @ProjectedValue)
+            MERGE banking.Covenant AS target
+            USING (SELECT @ProjectId AS ProjectId, 'Occupancy' AS CovenantType) AS source
+            ON target.ProjectId = source.ProjectId AND target.CovenantType = source.CovenantType
+            WHEN MATCHED THEN
+              UPDATE SET
+                LoanId = @LoanId,
+                CovenantDate = @CovenantDate,
+                Requirement = @Requirement,
+                ProjectedValue = @ProjectedValue
+            WHEN NOT MATCHED THEN
+              INSERT (ProjectId, LoanId, CovenantType, CovenantDate, Requirement, ProjectedValue)
+              VALUES (@ProjectId, @LoanId, @CovenantType, @CovenantDate, @Requirement, @ProjectedValue);
           `);
         covenantsCreated++;
       }
     }
   }
   
-  console.log(`  ✅ Created ${loansCreated} loans`);
-  console.log(`  ✅ Created ${dscrTestsCreated} DSCR tests`);
-  console.log(`  ✅ Created ${covenantsCreated} covenants`);
-  console.log(`  ✅ Created ${liquidityCreated} liquidity requirements`);
+  console.log(`  ✅ Processed ${loansCreated} loans (updated if exists, created if new)`);
+  console.log(`  ✅ Processed ${dscrTestsCreated} DSCR tests (updated if exists, created if new)`);
+  console.log(`  ✅ Processed ${covenantsCreated} covenants (updated if exists, created if new)`);
+  console.log(`  ✅ Processed ${liquidityCreated} liquidity requirements (updated if exists, created if new)`);
 }
 
 async function importExposure(pool: sql.ConnectionPool, csvPath: string) {
@@ -453,16 +515,25 @@ async function importParticipants(pool: sql.ConnectionPool, csvPath: string) {
           .input('ExposureAmount', sql.Decimal(18, 2), exposure)
           .input('PaidOff', sql.Bit, paidOff)
           .query(`
-            IF NOT EXISTS (SELECT 1 FROM banking.Participation WHERE ProjectId = @ProjectId AND BankId = @BankId)
-            INSERT INTO banking.Participation (ProjectId, LoanId, BankId, ParticipationPercent, ExposureAmount, PaidOff)
-            VALUES (@ProjectId, @LoanId, @BankId, @ParticipationPercent, @ExposureAmount, @PaidOff)
+            MERGE banking.Participation AS target
+            USING (SELECT @ProjectId AS ProjectId, @BankId AS BankId) AS source
+            ON target.ProjectId = source.ProjectId AND target.BankId = source.BankId
+            WHEN MATCHED THEN
+              UPDATE SET
+                LoanId = @LoanId,
+                ParticipationPercent = @ParticipationPercent,
+                ExposureAmount = @ExposureAmount,
+                PaidOff = @PaidOff
+            WHEN NOT MATCHED THEN
+              INSERT (ProjectId, LoanId, BankId, ParticipationPercent, ExposureAmount, PaidOff)
+              VALUES (@ProjectId, @LoanId, @BankId, @ParticipationPercent, @ExposureAmount, @PaidOff);
           `);
         participationsCreated++;
       }
     }
   }
   
-  console.log(`  ✅ Created ${participationsCreated} participations`);
+  console.log(`  ✅ Processed ${participationsCreated} participations (updated if exists, created if new)`);
 }
 
 async function importContingentLiabilities(pool: sql.ConnectionPool, csvPath: string) {
@@ -528,9 +599,17 @@ async function importContingentLiabilities(pool: sql.ConnectionPool, csvPath: st
               .input('GuaranteePercent', sql.Decimal(10, 4), percent)
               .input('GuaranteeAmount', sql.Decimal(18, 2), amount)
               .query(`
-                IF NOT EXISTS (SELECT 1 FROM banking.Guarantee WHERE ProjectId = @ProjectId AND PersonId = @PersonId)
-                INSERT INTO banking.Guarantee (ProjectId, LoanId, PersonId, GuaranteePercent, GuaranteeAmount)
-                VALUES (@ProjectId, @LoanId, @PersonId, @GuaranteePercent, @GuaranteeAmount)
+                MERGE banking.Guarantee AS target
+                USING (SELECT @ProjectId AS ProjectId, @PersonId AS PersonId) AS source
+                ON target.ProjectId = source.ProjectId AND target.PersonId = source.PersonId
+                WHEN MATCHED THEN
+                  UPDATE SET
+                    LoanId = @LoanId,
+                    GuaranteePercent = @GuaranteePercent,
+                    GuaranteeAmount = @GuaranteeAmount
+                WHEN NOT MATCHED THEN
+                  INSERT (ProjectId, LoanId, PersonId, GuaranteePercent, GuaranteeAmount)
+                  VALUES (@ProjectId, @LoanId, @PersonId, @GuaranteePercent, @GuaranteeAmount);
               `);
             guaranteesCreated++;
           }
@@ -538,7 +617,7 @@ async function importContingentLiabilities(pool: sql.ConnectionPool, csvPath: st
       }
     }
     
-    // Add covenant (last column)
+    // Add covenant (last column) - only if it doesn't already exist with same notes
     const covenantText = row[row.length - 1]?.trim();
     if (covenantText && covenantText !== '') {
       await pool.request()
@@ -550,13 +629,17 @@ async function importContingentLiabilities(pool: sql.ConnectionPool, csvPath: st
           IF NOT EXISTS (SELECT 1 FROM banking.Covenant WHERE ProjectId = @ProjectId AND Notes = @Notes)
           INSERT INTO banking.Covenant (ProjectId, LoanId, CovenantType, Notes)
           VALUES (@ProjectId, @LoanId, @CovenantType, @Notes)
+          ELSE
+          UPDATE banking.Covenant
+          SET LoanId = @LoanId, CovenantType = @CovenantType
+          WHERE ProjectId = @ProjectId AND Notes = @Notes
         `);
       covenantsCreated++;
     }
   }
   
-  console.log(`  ✅ Created ${guaranteesCreated} guarantees`);
-  console.log(`  ✅ Created ${covenantsCreated} additional covenants`);
+  console.log(`  ✅ Processed ${guaranteesCreated} guarantees (updated if exists, created if new)`);
+  console.log(`  ✅ Processed ${covenantsCreated} additional covenants (updated if exists, created if new)`);
 }
 
 async function importTargetedBanks(pool: sql.ConnectionPool, csvPath: string) {
