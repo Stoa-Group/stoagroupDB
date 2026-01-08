@@ -34,10 +34,12 @@ Make sure your code is in a Git repository (GitHub, GitLab, or Bitbucket).
 - **Region:** Choose closest to your Azure database (e.g., `Oregon (US West)` or `Ohio (US East)`)
 - **Branch:** `main` (or your default branch)
 - **Root Directory:** `api` (if your API code is in the `api` folder)
-- **Runtime:** `Node`
+- **Runtime:** `Node` ⚠️ **IMPORTANT: Select "Node" not "Docker"**
 - **Build Command:** `npm install && npm run build`
 - **Start Command:** `npm start`
 - **Plan:** Free (or paid if you need more resources)
+
+**⚠️ Important:** Make sure you select **"Node"** as the Runtime, NOT "Docker". If you see a Docker option, choose Node instead. The Dockerfile is available if you want to use Docker later, but native Node.js is simpler.
 
 ### Step 5: Set Environment Variables
 
@@ -159,10 +161,22 @@ Render automatically redeploys when you push to your connected branch:
 
 ## 🐛 Troubleshooting
 
+### "Dockerfile not found" Error
+**Solution:** Make sure you selected **"Node"** as the Runtime, NOT "Docker". 
+- Go to your service settings in Render
+- Change Runtime from "Docker" to "Node"
+- Save and redeploy
+
+If you want to use Docker instead:
+- Make sure the Dockerfile is in the `api/` folder (already created)
+- Select "Docker" as Runtime
+- Render will automatically use the Dockerfile
+
 ### Build Fails
 - Check that `package.json` has correct build script
 - Verify TypeScript compiles locally first: `npm run build`
 - Check Render logs for specific errors
+- Make sure Root Directory is set to `api` if your code is in that folder
 
 ### API Not Connecting to Database
 - Verify environment variables are set correctly
