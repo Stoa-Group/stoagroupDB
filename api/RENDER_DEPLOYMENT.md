@@ -1,0 +1,218 @@
+# Deploying to Render
+
+Render is a great choice for hosting your API! It's simple, reliable, and has a free tier.
+
+---
+
+## 🚀 Quick Deployment Steps
+
+### Step 1: Prepare Your Code
+
+Make sure your code is in a Git repository (GitHub, GitLab, or Bitbucket).
+
+### Step 2: Create a Render Account
+
+1. Go to [render.com](https://render.com)
+2. Sign up (free account works fine)
+3. Connect your Git provider (GitHub, GitLab, etc.)
+
+### Step 3: Create a New Web Service
+
+1. In Render dashboard, click **"New +"** button (top right)
+2. **Select "Web Service"** (the one with the globe icon)
+   - ⚠️ **NOT** Static Sites
+   - ⚠️ **NOT** Postgres (that's for databases)
+   - ✅ **YES** Web Services (for APIs/backends)
+3. Connect your repository (GitHub, GitLab, etc.)
+4. Select the repository with your API code
+
+### Step 4: Configure the Service
+
+**Settings:**
+
+- **Name:** `stoagroup-api` (or whatever you prefer)
+- **Region:** Choose closest to your Azure database (e.g., `Oregon (US West)` or `Ohio (US East)`)
+- **Branch:** `main` (or your default branch)
+- **Root Directory:** `api` (if your API code is in the `api` folder)
+- **Runtime:** `Node`
+- **Build Command:** `npm install && npm run build`
+- **Start Command:** `npm start`
+- **Plan:** Free (or paid if you need more resources)
+
+### Step 5: Set Environment Variables
+
+In the Render dashboard, go to **Environment** section and add:
+
+```
+DB_SERVER=stoagroupdb.database.windows.net
+DB_DATABASE=stoagroupDB
+DB_USER=arovner
+DB_PASSWORD=your_actual_password_here
+DB_ENCRYPT=true
+DB_TRUST_SERVER_CERTIFICATE=false
+NODE_ENV=production
+CORS_ORIGINS=*
+```
+
+**Important:** 
+- Replace `your_actual_password_here` with your real database password
+- For production, you might want to restrict CORS_ORIGINS to your Domo URL
+
+### Step 6: Deploy
+
+1. Click **"Create Web Service"**
+2. Render will automatically:
+   - Clone your repo
+   - Install dependencies
+   - Build your TypeScript
+   - Start your server
+
+### Step 7: Get Your API URL
+
+Once deployed, Render will give you a URL like:
+```
+https://stoagroup-api.onrender.com
+```
+
+**That's your API URL!** Use this in Domo instead of `localhost:3000`.
+
+---
+
+## 🔧 Configuration Details
+
+### Build Command
+```bash
+npm install && npm run build
+```
+
+### Start Command
+```bash
+npm start
+```
+
+### Root Directory
+- If your API code is in the root: leave blank
+- If your API code is in `api/` folder: set to `api`
+
+---
+
+## 🔒 Security Notes
+
+### For Production:
+
+1. **Restrict CORS:**
+   ```
+   CORS_ORIGINS=https://your-domo-instance.domo.com
+   ```
+
+2. **Use Render's Environment Variables:**
+   - Never commit passwords to Git
+   - Always use Render's environment variables section
+
+3. **Enable HTTPS:**
+   - Render provides HTTPS automatically
+   - Your API will be at `https://your-app.onrender.com`
+
+---
+
+## 🆓 Free Tier Limitations
+
+Render's free tier:
+- ✅ Always on (doesn't sleep)
+- ✅ HTTPS included
+- ✅ Custom domain support
+- ⚠️ Slower cold starts (first request after inactivity)
+- ⚠️ Limited to 750 hours/month (usually enough)
+
+**For production use:** Consider the $7/month Starter plan for better performance.
+
+---
+
+## 🧪 Testing Your Deployed API
+
+Once deployed, test it:
+
+```bash
+# Health check
+curl https://your-app.onrender.com/health
+
+# API documentation
+curl https://your-app.onrender.com/api
+```
+
+Or open in browser:
+- `https://your-app.onrender.com/health`
+- `https://your-app.onrender.com/api`
+
+---
+
+## 🔄 Updating Your API
+
+Render automatically redeploys when you push to your connected branch:
+
+1. Make changes to your code
+2. Commit and push to Git
+3. Render automatically detects changes and redeploys
+4. Your API updates in a few minutes
+
+---
+
+## 🐛 Troubleshooting
+
+### Build Fails
+- Check that `package.json` has correct build script
+- Verify TypeScript compiles locally first: `npm run build`
+- Check Render logs for specific errors
+
+### API Not Connecting to Database
+- Verify environment variables are set correctly
+- Check Azure SQL Database firewall allows Render's IPs
+- You may need to add Render's IP range to Azure firewall (or allow all Azure services)
+
+### CORS Errors
+- Make sure `CORS_ORIGINS` includes your Domo URL
+- Or set to `*` for testing (not recommended for production)
+
+---
+
+## 📋 Checklist
+
+Before deploying:
+- [ ] Code is in a Git repository
+- [ ] `.env` file is NOT committed (use Render env vars instead)
+- [ ] `npm run build` works locally
+- [ ] `npm start` works locally
+- [ ] You know your database password
+
+After deploying:
+- [ ] Health check works: `https://your-app.onrender.com/health`
+- [ ] API docs load: `https://your-app.onrender.com/api`
+- [ ] Test a POST request
+- [ ] Update Domo to use the new API URL
+
+---
+
+## 🎯 Next Steps
+
+Once deployed:
+1. Test your API URL
+2. Update Domo DataFlows to use: `https://your-app.onrender.com/api/...`
+3. Test making edits through Domo
+4. Monitor Render dashboard for any issues
+
+---
+
+## 💡 Pro Tips
+
+1. **Custom Domain:** Render lets you add a custom domain (e.g., `api.stoagroup.com`)
+2. **Auto-Deploy:** Only deploys from your main branch (or branch you specify)
+3. **Logs:** View real-time logs in Render dashboard
+4. **Metrics:** Monitor requests, response times, and errors
+
+---
+
+## 🔗 Useful Links
+
+- [Render Documentation](https://render.com/docs)
+- [Node.js on Render](https://render.com/docs/node)
+- [Environment Variables on Render](https://render.com/docs/environment-variables)
