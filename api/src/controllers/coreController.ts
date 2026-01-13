@@ -581,3 +581,298 @@ export const deleteEquityPartner = async (req: Request, res: Response, next: Nex
   }
 };
 
+// ============================================================
+// PRODUCT TYPE CONTROLLER
+// ============================================================
+
+export const getAllProductTypes = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request()
+      .query('SELECT * FROM core.ProductType WHERE IsActive = 1 ORDER BY DisplayOrder, ProductTypeName');
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getProductTypeById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM core.ProductType WHERE ProductTypeId = @id');
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Product Type not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createProductType = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { ProductTypeName, DisplayOrder, IsActive, Notes } = req.body;
+
+    if (!ProductTypeName) {
+      res.status(400).json({ success: false, error: { message: 'ProductTypeName is required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('ProductTypeName', sql.NVarChar(50), ProductTypeName)
+      .input('DisplayOrder', sql.Int, DisplayOrder || 0)
+      .input('IsActive', sql.Bit, IsActive !== undefined ? IsActive : true)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .query(`
+        INSERT INTO core.ProductType (ProductTypeName, DisplayOrder, IsActive, Notes)
+        OUTPUT INSERTED.*
+        VALUES (@ProductTypeName, @DisplayOrder, @IsActive, @Notes)
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 2627) {
+      res.status(409).json({ success: false, error: { message: 'Product Type with this name already exists' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const updateProductType = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const productTypeData = req.body;
+
+    const pool = await getConnection();
+    const request = pool.request().input('id', sql.Int, id);
+
+    const fields: string[] = [];
+    Object.keys(productTypeData).forEach((key) => {
+      if (key !== 'ProductTypeId' && productTypeData[key] !== undefined) {
+        fields.push(`${key} = @${key}`);
+        if (key === 'DisplayOrder') {
+          request.input(key, sql.Int, productTypeData[key]);
+        } else if (key === 'IsActive') {
+          request.input(key, sql.Bit, productTypeData[key]);
+        } else if (key === 'Notes') {
+          request.input(key, sql.NVarChar(sql.MAX), productTypeData[key]);
+        } else {
+          request.input(key, sql.NVarChar(50), productTypeData[key]);
+        }
+      }
+    });
+
+    if (fields.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'No fields to update' } });
+      return;
+    }
+
+    fields.push('UpdatedAt = SYSDATETIME()');
+
+    const result = await request.query(`
+      UPDATE core.ProductType
+      SET ${fields.join(', ')}
+      WHERE ProductTypeId = @id;
+      SELECT * FROM core.ProductType WHERE ProductTypeId = @id;
+    `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Product Type not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 2627) {
+      res.status(409).json({ success: false, error: { message: 'Product Type with this name already exists' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const deleteProductType = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    
+    // Soft delete by setting IsActive = 0 instead of hard delete
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        UPDATE core.ProductType 
+        SET IsActive = 0, UpdatedAt = SYSDATETIME()
+        WHERE ProductTypeId = @id;
+        SELECT * FROM core.ProductType WHERE ProductTypeId = @id;
+      `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Product Type not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.recordset[0], message: 'Product Type deactivated successfully' });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(409).json({ success: false, error: { message: 'Cannot delete product type with associated projects' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+// ============================================================
+// REGION CONTROLLER
+// ============================================================
+
+export const getAllRegions = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request()
+      .query('SELECT * FROM core.Region WHERE IsActive = 1 ORDER BY DisplayOrder, RegionName');
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getRegionById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM core.Region WHERE RegionId = @id');
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Region not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createRegion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { RegionName, DisplayOrder, IsActive, Notes } = req.body;
+
+    if (!RegionName) {
+      res.status(400).json({ success: false, error: { message: 'RegionName is required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('RegionName', sql.NVarChar(50), RegionName)
+      .input('DisplayOrder', sql.Int, DisplayOrder || 0)
+      .input('IsActive', sql.Bit, IsActive !== undefined ? IsActive : true)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .query(`
+        INSERT INTO core.Region (RegionName, DisplayOrder, IsActive, Notes)
+        OUTPUT INSERTED.*
+        VALUES (@RegionName, @DisplayOrder, @IsActive, @Notes)
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 2627) {
+      res.status(409).json({ success: false, error: { message: 'Region with this name already exists' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const updateRegion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const regionData = req.body;
+
+    const pool = await getConnection();
+    const request = pool.request().input('id', sql.Int, id);
+
+    const fields: string[] = [];
+    Object.keys(regionData).forEach((key) => {
+      if (key !== 'RegionId' && regionData[key] !== undefined) {
+        fields.push(`${key} = @${key}`);
+        if (key === 'DisplayOrder') {
+          request.input(key, sql.Int, regionData[key]);
+        } else if (key === 'IsActive') {
+          request.input(key, sql.Bit, regionData[key]);
+        } else if (key === 'Notes') {
+          request.input(key, sql.NVarChar(sql.MAX), regionData[key]);
+        } else {
+          request.input(key, sql.NVarChar(50), regionData[key]);
+        }
+      }
+    });
+
+    if (fields.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'No fields to update' } });
+      return;
+    }
+
+    fields.push('UpdatedAt = SYSDATETIME()');
+
+    const result = await request.query(`
+      UPDATE core.Region
+      SET ${fields.join(', ')}
+      WHERE RegionId = @id;
+      SELECT * FROM core.Region WHERE RegionId = @id;
+    `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Region not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 2627) {
+      res.status(409).json({ success: false, error: { message: 'Region with this name already exists' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const deleteRegion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    
+    // Soft delete by setting IsActive = 0 instead of hard delete
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        UPDATE core.Region 
+        SET IsActive = 0, UpdatedAt = SYSDATETIME()
+        WHERE RegionId = @id;
+        SELECT * FROM core.Region WHERE RegionId = @id;
+      `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Region not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.recordset[0], message: 'Region deactivated successfully' });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(409).json({ success: false, error: { message: 'Cannot delete region with associated projects' } });
+      return;
+    }
+    next(error);
+  }
+};
