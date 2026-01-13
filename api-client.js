@@ -245,6 +245,104 @@ export async function deleteEquityPartner(id) {
   return apiRequest(`/api/core/equity-partners/${id}`, 'DELETE');
 }
 
+// PRODUCT TYPES (CORE Reference Table)
+/**
+ * Get all active product types (for dropdowns)
+ * @returns {Promise<object>} { success: true, data: [{ ProductTypeId, ProductTypeName, DisplayOrder, ... }] }
+ */
+export async function getAllProductTypes() {
+  return apiRequest('/api/core/product-types');
+}
+
+/**
+ * Get product type by ID
+ * @param {number} id - Product Type ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+export async function getProductTypeById(id) {
+  return apiRequest(`/api/core/product-types/${id}`);
+}
+
+/**
+ * Create a new product type
+ * @param {object} data - { ProductTypeName, DisplayOrder?, IsActive?, Notes? }
+ * @returns {Promise<object>} { success: true, data: {...} }
+ * @example
+ * await createProductType({ ProductTypeName: 'Custom Type', DisplayOrder: 5 });
+ */
+export async function createProductType(data) {
+  return apiRequest('/api/core/product-types', 'POST', data);
+}
+
+/**
+ * Update a product type
+ * @param {number} id - Product Type ID
+ * @param {object} data - Fields to update
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+export async function updateProductType(id, data) {
+  return apiRequest(`/api/core/product-types/${id}`, 'PUT', data);
+}
+
+/**
+ * Delete (deactivate) a product type
+ * Note: This performs a soft delete (sets IsActive = 0)
+ * @param {number} id - Product Type ID
+ * @returns {Promise<object>} { success: true, message: '...' }
+ */
+export async function deleteProductType(id) {
+  return apiRequest(`/api/core/product-types/${id}`, 'DELETE');
+}
+
+// REGIONS (CORE Reference Table)
+/**
+ * Get all active regions (for dropdowns)
+ * @returns {Promise<object>} { success: true, data: [{ RegionId, RegionName, DisplayOrder, ... }] }
+ */
+export async function getAllRegions() {
+  return apiRequest('/api/core/regions');
+}
+
+/**
+ * Get region by ID
+ * @param {number} id - Region ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+export async function getRegionById(id) {
+  return apiRequest(`/api/core/regions/${id}`);
+}
+
+/**
+ * Create a new region
+ * @param {object} data - { RegionName, DisplayOrder?, IsActive?, Notes? }
+ * @returns {Promise<object>} { success: true, data: {...} }
+ * @example
+ * await createRegion({ RegionName: 'Southeast', DisplayOrder: 3 });
+ */
+export async function createRegion(data) {
+  return apiRequest('/api/core/regions', 'POST', data);
+}
+
+/**
+ * Update a region
+ * @param {number} id - Region ID
+ * @param {object} data - Fields to update
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+export async function updateRegion(id, data) {
+  return apiRequest(`/api/core/regions/${id}`, 'PUT', data);
+}
+
+/**
+ * Delete (deactivate) a region
+ * Note: This performs a soft delete (sets IsActive = 0)
+ * @param {number} id - Region ID
+ * @returns {Promise<object>} { success: true, message: '...' }
+ */
+export async function deleteRegion(id) {
+  return apiRequest(`/api/core/regions/${id}`, 'DELETE');
+}
+
 // ============================================================
 // BANKING SCHEMA
 // ============================================================

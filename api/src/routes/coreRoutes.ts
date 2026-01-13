@@ -32,5 +32,19 @@ router.post('/equity-partners', coreController.createEquityPartner);
 router.put('/equity-partners/:id', coreController.updateEquityPartner);
 router.delete('/equity-partners/:id', coreController.deleteEquityPartner);
 
+// Product Type routes
+router.get('/product-types', coreController.getAllProductTypes);
+router.get('/product-types/:id', coreController.getProductTypeById);
+router.post('/product-types', coreController.createProductType);
+router.put('/product-types/:id', coreController.updateProductType);
+router.delete('/product-types/:id', coreController.deleteProductType);
+
+// Region routes
+router.get('/regions', coreController.getAllRegions);
+router.get('/regions/:id', coreController.getRegionById);
+router.post('/regions', coreController.createRegion);
+router.put('/regions/:id', coreController.updateRegion);
+router.delete('/regions/:id', coreController.deleteRegion);
+
 export default router;
 

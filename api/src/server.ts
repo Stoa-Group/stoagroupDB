@@ -88,6 +88,20 @@ app.get('/api', (req: Request, res: Response) => {
           update: 'PUT /api/core/equity-partners/:id',
           delete: 'DELETE /api/core/equity-partners/:id',
         },
+        productTypes: {
+          getAll: 'GET /api/core/product-types',
+          getById: 'GET /api/core/product-types/:id',
+          create: 'POST /api/core/product-types',
+          update: 'PUT /api/core/product-types/:id',
+          delete: 'DELETE /api/core/product-types/:id',
+        },
+        regions: {
+          getAll: 'GET /api/core/regions',
+          getById: 'GET /api/core/regions/:id',
+          create: 'POST /api/core/regions',
+          update: 'PUT /api/core/regions/:id',
+          delete: 'DELETE /api/core/regions/:id',
+        },
       },
       banking: {
         loans: {

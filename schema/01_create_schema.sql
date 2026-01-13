@@ -24,7 +24,7 @@ CREATE TABLE core.Project (
     City        NVARCHAR(100) NULL,
     State       NVARCHAR(50) NULL,
     Region      NVARCHAR(50) NULL,  -- Gulf Coast, Carolinas, etc.
-    Location    NVARCHAR(255) NULL, -- Full location text
+    Address     NVARCHAR(500) NULL, -- Full address
     Units       INT NULL,          -- Planned/underwritten units
     
     -- Product type

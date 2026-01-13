@@ -4,6 +4,7 @@
 -- Safe to run multiple times (idempotent)
 -- ============================================================
 -- CORE datapoints: ProjectName, City, State, Region, Address, Units, BirthOrder, Stage
+-- Note: Location column removed (redundant - use City, State, Region, Address instead)
 -- ============================================================
 
 SET NOCOUNT ON;
@@ -275,6 +276,92 @@ END
 GO
 
 -- ============================================================
+-- 6. CREATE REFERENCE TABLES FOR PRODUCT TYPES AND REGIONS
+-- ============================================================
+PRINT '';
+PRINT '6. Checking reference tables (ProductType, Region)...';
+
+-- Product Type table
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'ProductType' AND schema_id = SCHEMA_ID('core'))
+BEGIN
+    CREATE TABLE core.ProductType (
+        ProductTypeId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_ProductType PRIMARY KEY,
+        ProductTypeName NVARCHAR(50) NOT NULL CONSTRAINT UQ_ProductType_Name UNIQUE,
+        DisplayOrder INT NULL DEFAULT 0,
+        IsActive BIT NOT NULL DEFAULT 1,
+        CreatedAt DATETIME2(0) NOT NULL DEFAULT SYSDATETIME(),
+        UpdatedAt DATETIME2(0) NULL,
+        Notes NVARCHAR(MAX) NULL
+    );
+    
+    PRINT '   ✓ Created core.ProductType table';
+    
+    -- Insert default product types
+    INSERT INTO core.ProductType (ProductTypeName, DisplayOrder) VALUES
+        ('Heights', 1),
+        ('Waters', 2),
+        ('Flats', 3),
+        ('Other', 4);
+    
+    PRINT '   ✓ Inserted default product types';
+END
+ELSE
+BEGIN
+    PRINT '   ✓ core.ProductType table already exists';
+END
+GO
+
+-- Region table
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Region' AND schema_id = SCHEMA_ID('core'))
+BEGIN
+    CREATE TABLE core.Region (
+        RegionId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Region PRIMARY KEY,
+        RegionName NVARCHAR(50) NOT NULL CONSTRAINT UQ_Region_Name UNIQUE,
+        DisplayOrder INT NULL DEFAULT 0,
+        IsActive BIT NOT NULL DEFAULT 1,
+        CreatedAt DATETIME2(0) NOT NULL DEFAULT SYSDATETIME(),
+        UpdatedAt DATETIME2(0) NULL,
+        Notes NVARCHAR(MAX) NULL
+    );
+    
+    PRINT '   ✓ Created core.Region table';
+    
+    -- Insert default regions
+    INSERT INTO core.Region (RegionName, DisplayOrder) VALUES
+        ('Gulf Coast', 1),
+        ('Carolinas', 2);
+    
+    PRINT '   ✓ Inserted default regions';
+END
+ELSE
+BEGIN
+    PRINT '   ✓ core.Region table already exists';
+END
+GO
+
+-- ============================================================
+-- 7. REMOVE LOCATION COLUMN (REDUNDANT)
+-- ============================================================
+PRINT '';
+PRINT '7. Removing Location column from core.Project...';
+
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('core.Project') 
+    AND name = 'Location'
+)
+BEGIN
+    ALTER TABLE core.Project DROP COLUMN Location;
+    PRINT '   ✓ Removed Location column from core.Project';
+END
+ELSE
+BEGIN
+    PRINT '   ✓ Location column does not exist (already removed)';
+END
+GO
+
+-- ============================================================
 -- SUMMARY
 -- ============================================================
 PRINT '';
@@ -292,14 +379,26 @@ PRINT '  ✓ Units';
 PRINT '  ✓ BirthOrder';
 PRINT '  ✓ Stage';
 PRINT '';
+PRINT 'Removed:';
+PRINT '  ✗ Location (redundant - use City, State, Region, Address instead)';
+PRINT '';
 PRINT 'Additional modifications:';
 PRINT '  ✓ Bank exposure fields (HQState, HoldLimit, PerDealLimit, Deposits)';
 PRINT '  ✓ FinancingStage in banking.Loan';
 PRINT '  ✓ IMSInvestorProfileId in core.EquityPartner';
 PRINT '  ✓ Authentication table (auth.User) for Capital Markets access';
+PRINT '  ✓ Reference tables: core.ProductType and core.Region (for dropdowns)';
+PRINT '';
+PRINT 'Reference Tables Created:';
+PRINT '  ✓ core.ProductType - Manage product types (Heights, Waters, Flats, Other)';
+PRINT '  ✓ core.Region - Manage regions (Gulf Coast, Carolinas)';
+PRINT '  → Use API endpoints to add/edit/delete:';
+PRINT '     GET/POST/PUT/DELETE /api/core/product-types';
+PRINT '     GET/POST/PUT/DELETE /api/core/regions';
 PRINT '';
 PRINT 'Next steps:';
 PRINT '  1. Run: npm run db:seed-auth-users (in api directory)';
 PRINT '  2. Set JWT_SECRET in .env file for production';
+PRINT '  3. Use API to manage ProductTypes and Regions via dropdowns';
 PRINT '';
 PRINT '============================================================';
