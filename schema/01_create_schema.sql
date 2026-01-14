@@ -28,7 +28,7 @@ CREATE TABLE core.Project (
     Units       INT NULL,          -- Planned/underwritten units
     
     -- Product type
-    ProductType NVARCHAR(50) NULL,  -- Heights, Waters, Flats, Other
+    ProductType NVARCHAR(50) NULL,  -- Heights, Prototype, Flats, Other
     
     -- Stage
     Stage       NVARCHAR(50) NULL,   -- Prospective, Under Contract, Under Construction, Lease-Up, Stabilized, Liquidated

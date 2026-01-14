@@ -299,7 +299,7 @@ BEGIN
     -- Insert default product types
     INSERT INTO core.ProductType (ProductTypeName, DisplayOrder) VALUES
         ('Heights', 1),
-        ('Waters', 2),
+        ('Prototype', 2),
         ('Flats', 3),
         ('Other', 4);
     
@@ -619,7 +619,7 @@ PRINT '  ✓ Authentication table (auth.User) for Capital Markets access';
 PRINT '  ✓ Reference tables: core.ProductType and core.Region (for dropdowns)';
 PRINT '';
 PRINT 'Reference Tables Created:';
-PRINT '  ✓ core.ProductType - Manage product types (Heights, Waters, Flats, Other)';
+PRINT '  ✓ core.ProductType - Manage product types (Heights, Prototype, Flats, Other)';
 PRINT '  ✓ core.Region - Manage regions (Gulf Coast, Carolinas)';
 PRINT '  → Use API endpoints to add/edit/delete:';
 PRINT '     GET/POST/PUT/DELETE /api/core/product-types';

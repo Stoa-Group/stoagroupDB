@@ -26,7 +26,7 @@ BEGIN
     -- Insert default product types
     INSERT INTO core.ProductType (ProductTypeName, DisplayOrder) VALUES
         ('Heights', 1),
-        ('Waters', 2),
+        ('Prototype', 2),
         ('Flats', 3),
         ('Other', 4);
     

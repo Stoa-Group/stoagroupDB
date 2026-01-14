@@ -187,7 +187,7 @@ function determineRegion(state: string | null, location: string | null): string 
 function determineProductType(projectName: string): string | null {
   const name = projectName.toLowerCase();
   if (name.includes('heights')) return 'Heights';
-  if (name.includes('waters')) return 'Waters';
+  if (name.includes('waters')) return 'Prototype';
   if (name.includes('flats')) return 'Flats';
   return 'Other';
 }
