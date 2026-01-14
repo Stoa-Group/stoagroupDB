@@ -106,6 +106,15 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
+    // Validate IndexName for Construction loans: must be NULL, 'Prime', or 'SOFR'
+    if (LoanPhase === 'Construction' && IndexName && IndexName !== 'Prime' && IndexName !== 'SOFR') {
+      res.status(400).json({ 
+        success: false, 
+        error: { message: 'For Construction loans, IndexName must be NULL, "Prime", or "SOFR"' } 
+      });
+      return;
+    }
+
     const pool = await getConnection();
     const result = await pool.request()
       .input('ProjectId', sql.Int, ProjectId)
@@ -168,6 +177,34 @@ export const updateLoan = async (req: Request, res: Response, next: NextFunction
     const loanData = req.body;
 
     const pool = await getConnection();
+
+    // Validate IndexName for Construction loans: must be NULL, 'Prime', or 'SOFR'
+    if (loanData.IndexName !== undefined) {
+      // Get current loan phase if not provided in update
+      let loanPhase = loanData.LoanPhase;
+      if (!loanPhase) {
+        const currentLoan = await pool.request()
+          .input('id', sql.Int, id)
+          .query('SELECT LoanPhase FROM banking.Loan WHERE LoanId = @id');
+        
+        if (currentLoan.recordset.length === 0) {
+          res.status(404).json({ success: false, error: { message: 'Loan not found' } });
+          return;
+        }
+        loanPhase = currentLoan.recordset[0].LoanPhase;
+      }
+
+      // Validate IndexName for Construction loans
+      if (loanPhase === 'Construction' && loanData.IndexName && 
+          loanData.IndexName !== 'Prime' && loanData.IndexName !== 'SOFR') {
+        res.status(400).json({ 
+          success: false, 
+          error: { message: 'For Construction loans, IndexName must be NULL, "Prime", or "SOFR"' } 
+        });
+        return;
+      }
+    }
+
     const request = pool.request().input('id', sql.Int, id);
 
     // Build dynamic update query

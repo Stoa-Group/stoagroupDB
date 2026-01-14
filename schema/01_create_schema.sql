@@ -93,7 +93,7 @@ CREATE TABLE banking.Loan (
     
     -- Rate terms
     FixedOrFloating NVARCHAR(20) NULL,  -- Fixed, Floating
-    IndexName      NVARCHAR(50) NULL,  -- SOFR, WSJ Prime, N/A
+    IndexName      NVARCHAR(50) NULL,  -- For Construction: Prime or SOFR (NULL for Fixed)
     Spread         NVARCHAR(50) NULL,  -- Store as entered: "2.75%", "0.50%"
     InterestRate   NVARCHAR(100) NULL, -- For fixed rates or complex expressions
     
