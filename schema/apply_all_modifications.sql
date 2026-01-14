@@ -362,6 +362,146 @@ END
 GO
 
 -- ============================================================
+-- 8. UPDATE PIPELINE.UNDERCONTRACT FOR LAND DEVELOPMENT
+-- ============================================================
+PRINT '';
+PRINT '8. Updating pipeline.UnderContract for Land Development...';
+
+-- Remove redundant columns (Location, Region, Units) - pull from CORE instead
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'Location'
+)
+BEGIN
+    ALTER TABLE pipeline.UnderContract DROP COLUMN Location;
+    PRINT '   ✓ Removed Location column (use City/State from core.Project)';
+END
+ELSE
+BEGIN
+    PRINT '   ✓ Location column does not exist';
+END
+GO
+
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'Region'
+)
+BEGIN
+    ALTER TABLE pipeline.UnderContract DROP COLUMN Region;
+    PRINT '   ✓ Removed Region column (use core.Region table)';
+END
+ELSE
+BEGIN
+    PRINT '   ✓ Region column does not exist';
+END
+GO
+
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'Units'
+)
+BEGIN
+    ALTER TABLE pipeline.UnderContract DROP COLUMN Units;
+    PRINT '   ✓ Removed Units column (use Units from core.Project)';
+END
+ELSE
+BEGIN
+    PRINT '   ✓ Units column does not exist';
+END
+GO
+
+-- Rename columns for clarity
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'Price'
+)
+BEGIN
+    EXEC sp_rename 'pipeline.UnderContract.Price', 'LandPrice', 'COLUMN';
+    PRINT '   ✓ Renamed Price to LandPrice';
+END
+ELSE IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'LandPrice'
+)
+BEGIN
+    PRINT '   ✓ LandPrice column already exists';
+END
+GO
+
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'PricePerSF'
+)
+BEGIN
+    EXEC sp_rename 'pipeline.UnderContract.PricePerSF', 'SqFtPrice', 'COLUMN';
+    PRINT '   ✓ Renamed PricePerSF to SqFtPrice';
+END
+ELSE IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'SqFtPrice'
+)
+BEGIN
+    PRINT '   ✓ SqFtPrice column already exists';
+END
+GO
+
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'CashFlag'
+)
+BEGIN
+    EXEC sp_rename 'pipeline.UnderContract.CashFlag', 'Cash', 'COLUMN';
+    PRINT '   ✓ Renamed CashFlag to Cash';
+END
+ELSE IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'Cash'
+)
+BEGIN
+    PRINT '   ✓ Cash column already exists';
+END
+GO
+
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'ExtensionNotes'
+)
+BEGIN
+    EXEC sp_rename 'pipeline.UnderContract.ExtensionNotes', 'ClosingNotes', 'COLUMN';
+    PRINT '   ✓ Renamed ExtensionNotes to ClosingNotes';
+END
+ELSE IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.UnderContract') 
+    AND name = 'ClosingNotes'
+)
+BEGIN
+    PRINT '   ✓ ClosingNotes column already exists';
+END
+GO
+
+-- ============================================================
 -- SUMMARY
 -- ============================================================
 PRINT '';
@@ -396,9 +536,19 @@ PRINT '  → Use API endpoints to add/edit/delete:';
 PRINT '     GET/POST/PUT/DELETE /api/core/product-types';
 PRINT '     GET/POST/PUT/DELETE /api/core/regions';
 PRINT '';
+PRINT 'Land Development Updates:';
+PRINT '  ✓ pipeline.UnderContract - Removed redundant fields (Location, Region, Units)';
+PRINT '  ✓ Now pulls CORE data from core.Project and core.Region';
+PRINT '  ✓ Land Development specific fields: Acreage, LandPrice, SqFtPrice,';
+PRINT '    ExecutionDate, DueDiligenceDate, ClosingDate, PurchasingEntity,';
+PRINT '    Cash, OpportunityZone, ClosingNotes';
+PRINT '  → SqFtPrice is auto-calculated: LandPrice / (Acreage * 43560)';
+PRINT '  → Use API endpoints: GET/POST/PUT/DELETE /api/pipeline/under-contracts';
+PRINT '';
 PRINT 'Next steps:';
 PRINT '  1. Run: npm run db:seed-auth-users (in api directory)';
 PRINT '  2. Set JWT_SECRET in .env file for production';
 PRINT '  3. Use API to manage ProductTypes and Regions via dropdowns';
+PRINT '  4. Use API to manage Land Development deals (Under Contract)';
 PRINT '';
 PRINT '============================================================';

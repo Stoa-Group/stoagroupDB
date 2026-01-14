@@ -3,8 +3,9 @@ import * as pipelineController from '../controllers/pipelineController';
 
 const router = Router();
 
-// Under Contract routes
+// Under Contract routes (Land Development)
 router.get('/under-contracts', pipelineController.getAllUnderContracts);
+router.get('/under-contracts/project/:projectId', pipelineController.getUnderContractByProjectId); // Get by ProjectId (must come before /:id)
 router.get('/under-contracts/:id', pipelineController.getUnderContractById);
 router.post('/under-contracts', pipelineController.createUnderContract);
 router.put('/under-contracts/:id', pipelineController.updateUnderContract);

@@ -267,27 +267,28 @@ CREATE TABLE banking.EquityCommitment (
 );
 
 -- ============================================================
--- PIPELINE: UNDER CONTRACT
+-- PIPELINE: UNDER CONTRACT (Land Development - Stoa Properties Tracker)
 -- ============================================================
+-- Note: CORE attributes (ProjectName, City, State, Region, Units) are pulled from core.Project
+--       Region is pulled from core.Region table
+--       Only Land Development specific attributes are stored here
 CREATE TABLE pipeline.UnderContract (
     UnderContractId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_UnderContract PRIMARY KEY,
     ProjectId       INT NOT NULL,
     
-    Location        NVARCHAR(255) NULL,
-    Region          NVARCHAR(50) NULL,
+    -- Land Development specific attributes (no redundant CORE data)
     Acreage         DECIMAL(18,4) NULL,
-    Units           INT NULL,
-    Price           DECIMAL(18,2) NULL,
-    PricePerSF      DECIMAL(18,2) NULL,
+    LandPrice       DECIMAL(18,2) NULL,  -- Land purchase price
+    SqFtPrice       DECIMAL(18,2) NULL,  -- Calculated: LandPrice / (Acreage * 43560)
     
-    ExecutionDate   DATE NULL,
-    DueDiligenceDate DATE NULL,
-    ClosingDate     DATE NULL,
+    ExecutionDate   DATE NULL,           -- Date contract executed
+    DueDiligenceDate DATE NULL,          -- Date due diligence ends
+    ClosingDate     DATE NULL,           -- Closing date
     
     PurchasingEntity NVARCHAR(255) NULL,
-    CashFlag         BIT NULL,
-    OpportunityZone  BIT NULL,
-    ExtensionNotes   NVARCHAR(MAX) NULL,
+    Cash             BIT NULL,           -- Boolean: paying cash
+    OpportunityZone  BIT NULL,           -- Boolean: in opportunity zone
+    ClosingNotes     NVARCHAR(MAX) NULL,  -- Extension option / closing notes
     
     CONSTRAINT FK_UC_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
     CONSTRAINT UQ_UC_Project UNIQUE (ProjectId)

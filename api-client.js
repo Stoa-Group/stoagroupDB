@@ -590,22 +590,96 @@ export async function deleteEquityCommitment(id) {
 // ============================================================
 
 // UNDER CONTRACTS
+// ============================================================
+// LAND DEVELOPMENT - UNDER CONTRACT (Stoa Properties Tracker)
+// ============================================================
+/**
+ * Get all under contract deals with CORE and Land Development data
+ * Returns: ProjectName, City, State, Region (from CORE), Units (from CORE),
+ *          plus Land Development specific: Acreage, LandPrice, SqFtPrice, etc.
+ * @returns {Promise<object>} { success: true, data: [{...}] }
+ */
 export async function getAllUnderContracts() {
   return apiRequest('/api/pipeline/under-contracts');
 }
 
+/**
+ * Get under contract deal by ID
+ * @param {number} id - Under Contract ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
 export async function getUnderContractById(id) {
   return apiRequest(`/api/pipeline/under-contracts/${id}`);
 }
 
+/**
+ * Get under contract deal by Project ID
+ * @param {number} projectId - Project ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+export async function getUnderContractByProjectId(projectId) {
+  return apiRequest(`/api/pipeline/under-contracts/project/${projectId}`);
+}
+
+/**
+ * Create a new under contract deal (Land Development)
+ * 
+ * CORE attributes (pulled from core.Project, can be updated):
+ * - ProjectName, City, State, Region, Units (from CORE)
+ * 
+ * Land Development specific attributes (stored in pipeline.UnderContract):
+ * @param {object} data - {
+ *   ProjectId: number (required),
+ *   Units?: number (updates CORE.Project.Units),
+ *   Acreage?: number,
+ *   LandPrice?: number,
+ *   ExecutionDate?: string (YYYY-MM-DD),
+ *   DueDiligenceDate?: string (YYYY-MM-DD),
+ *   ClosingDate?: string (YYYY-MM-DD),
+ *   PurchasingEntity?: string,
+ *   Cash?: boolean,
+ *   OpportunityZone?: boolean,
+ *   ClosingNotes?: string
+ * }
+ * @returns {Promise<object>} { success: true, data: {...} }
+ * 
+ * Note: SqFtPrice is automatically calculated as LandPrice / (Acreage * 43560)
+ * @example
+ * await createUnderContract({
+ *   ProjectId: 1,
+ *   Units: 200,
+ *   Acreage: 10.5,
+ *   LandPrice: 5000000,
+ *   ExecutionDate: '2024-01-15',
+ *   Cash: true,
+ *   OpportunityZone: false
+ * });
+ */
 export async function createUnderContract(data) {
   return apiRequest('/api/pipeline/under-contracts', 'POST', data);
 }
 
+/**
+ * Update an under contract deal (Land Development)
+ * 
+ * Can update:
+ * - Units (updates CORE.Project.Units)
+ * - Any Land Development specific fields
+ * 
+ * SqFtPrice is automatically recalculated if LandPrice or Acreage changes
+ * @param {number} id - Under Contract ID
+ * @param {object} data - Fields to update (same as createUnderContract)
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
 export async function updateUnderContract(id, data) {
   return apiRequest(`/api/pipeline/under-contracts/${id}`, 'PUT', data);
 }
 
+/**
+ * Delete an under contract deal
+ * @param {number} id - Under Contract ID
+ * @returns {Promise<object>} { success: true, message: '...' }
+ */
 export async function deleteUnderContract(id) {
   return apiRequest(`/api/pipeline/under-contracts/${id}`, 'DELETE');
 }
