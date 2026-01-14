@@ -59,7 +59,7 @@ CREATE TABLE audit.ProjectHistory (
     City           NVARCHAR(100) NULL,
     State          NVARCHAR(50) NULL,
     Region         NVARCHAR(50) NULL,
-    Location       NVARCHAR(255) NULL,
+    Address        NVARCHAR(500) NULL,
     Units          INT NULL,
     ProductType    NVARCHAR(50) NULL,
     Stage          NVARCHAR(50) NULL,
@@ -146,12 +146,12 @@ BEGIN
         
         -- Insert into history table
         INSERT INTO audit.ProjectHistory (
-            ProjectId, ProjectName, City, State, Region, Location, Units,
+            ProjectId, ProjectName, City, State, Region, Address, Units,
             ProductType, Stage, EstimatedConstructionStartDate,
             ValidFrom, ValidTo, ChangedBy, ChangeType, Application
         )
         SELECT 
-            ProjectId, ProjectName, City, State, Region, Location, Units,
+            ProjectId, ProjectName, City, State, Region, Address, Units,
             ProductType, Stage, EstimatedConstructionStartDate,
             @ChangedAt, NULL, @ChangedBy, @ChangeType, 'Domo'
         FROM inserted;
@@ -182,12 +182,12 @@ BEGIN
         
         -- Insert new history record
         INSERT INTO audit.ProjectHistory (
-            ProjectId, ProjectName, City, State, Region, Location, Units,
+            ProjectId, ProjectName, City, State, Region, Address, Units,
             ProductType, Stage, EstimatedConstructionStartDate,
             ValidFrom, ValidTo, ChangedBy, ChangeType, Application
         )
         SELECT 
-            ProjectId, ProjectName, City, State, Region, Location, Units,
+            ProjectId, ProjectName, City, State, Region, Address, Units,
             ProductType, Stage, EstimatedConstructionStartDate,
             @ChangedAt, NULL, @ChangedBy, @ChangeType, 'Domo'
         FROM inserted;
@@ -379,7 +379,7 @@ SELECT
     p.City,
     p.State,
     p.Region,
-    p.Location,
+    p.Address,
     p.Units,
     p.ProductType,
     p.Stage,
@@ -409,7 +409,7 @@ RETURN
         City,
         State,
         Region,
-        Location,
+        Address,
         Units,
         ProductType,
         Stage,
@@ -446,7 +446,7 @@ RETURN
         City,
         State,
         Region,
-        Location,
+        Address,
         Units,
         ProductType,
         Stage,

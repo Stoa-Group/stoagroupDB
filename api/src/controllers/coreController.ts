@@ -90,9 +90,10 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
     const request = pool.request().input('id', sql.Int, id);
 
     // Build dynamic update query - only update fields that are provided
+    // Filter out Location column (removed from schema - use City, State, Region, Address instead)
     const fields: string[] = [];
     Object.keys(projectData).forEach((key) => {
-      if (key !== 'ProjectId' && projectData[key] !== undefined) {
+      if (key !== 'ProjectId' && key !== 'Location' && projectData[key] !== undefined) {
         fields.push(`${key} = @${key}`);
         if (key === 'Units') {
           request.input(key, sql.Int, projectData[key]);
