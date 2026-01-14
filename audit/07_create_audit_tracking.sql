@@ -336,17 +336,19 @@ BEGIN
             @ChangedAt, NULL, @ChangedBy, @ChangeType, 'Domo'
         FROM inserted;
         
-        -- Log key field changes
-        INSERT INTO audit.AuditLog (TableName, RecordId, ColumnName, ChangeType, OldValue, NewValue, ChangedBy, Application)
+        -- Log key field changes (with SchemaName)
+        INSERT INTO audit.AuditLog (SchemaName, TableName, RecordId, ColumnName, ChangeType, OldValue, NewValue, ChangedBy, Application, ProjectId)
         SELECT 
-            'banking.Loan',
+            'banking',
+            'Loan',
             i.LoanId,
             'LoanAmount',
             @ChangeType,
             CAST(d.LoanAmount AS NVARCHAR(MAX)),
             CAST(i.LoanAmount AS NVARCHAR(MAX)),
             @ChangedBy,
-            'Domo'
+            'Domo',
+            i.ProjectId
         FROM inserted i
         INNER JOIN deleted d ON i.LoanId = d.LoanId
         WHERE i.LoanAmount <> d.LoanAmount OR (i.LoanAmount IS NULL AND d.LoanAmount IS NOT NULL) OR (i.LoanAmount IS NOT NULL AND d.LoanAmount IS NULL);
