@@ -79,5 +79,25 @@ router.post('/equity-commitments', authenticate, bankingController.createEquityC
 router.put('/equity-commitments/:id', authenticate, bankingController.updateEquityCommitment);
 router.delete('/equity-commitments/:id', authenticate, bankingController.deleteEquityCommitment);
 
+// Loan Proceeds routes (Additional Draws/Disbursements)
+router.get('/loan-proceeds', bankingController.getAllLoanProceeds);
+router.get('/loan-proceeds/:id', bankingController.getLoanProceedsById);
+router.get('/loan-proceeds/project/:projectId', bankingController.getLoanProceedsByProject);
+router.get('/loan-proceeds/loan/:loanId', bankingController.getLoanProceedsByLoan);
+// Write operations require authentication
+router.post('/loan-proceeds', authenticate, bankingController.createLoanProceeds);
+router.put('/loan-proceeds/:id', authenticate, bankingController.updateLoanProceeds);
+router.delete('/loan-proceeds/:id', authenticate, bankingController.deleteLoanProceeds);
+
+// Guarantee Burndown routes
+router.get('/guarantee-burndowns', bankingController.getAllGuaranteeBurndowns);
+router.get('/guarantee-burndowns/:id', bankingController.getGuaranteeBurndownById);
+router.get('/guarantee-burndowns/project/:projectId', bankingController.getGuaranteeBurndownsByProject);
+router.get('/guarantee-burndowns/person/:personId', bankingController.getGuaranteeBurndownsByPerson);
+// Write operations require authentication
+router.post('/guarantee-burndowns', authenticate, bankingController.createGuaranteeBurndown);
+router.put('/guarantee-burndowns/:id', authenticate, bankingController.updateGuaranteeBurndown);
+router.delete('/guarantee-burndowns/:id', authenticate, bankingController.deleteGuaranteeBurndown);
+
 export default router;
 

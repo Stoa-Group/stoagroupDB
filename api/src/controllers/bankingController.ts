@@ -1690,3 +1690,512 @@ export const deleteEquityCommitment = async (req: Request, res: Response, next: 
   }
 };
 
+// ============================================================
+// LOAN PROCEEDS CONTROLLER (Additional Draws/Disbursements)
+// ============================================================
+
+export const getAllLoanProceeds = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request().query(`
+      SELECT 
+        lp.*,
+        p.ProjectName,
+        l.LoanType,
+        l.LoanPhase
+      FROM banking.LoanProceeds lp
+      LEFT JOIN core.Project p ON lp.ProjectId = p.ProjectId
+      LEFT JOIN banking.Loan l ON lp.LoanId = l.LoanId
+      ORDER BY lp.ProceedsDate DESC, lp.LoanProceedsId DESC
+    `);
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getLoanProceedsById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT 
+          lp.*,
+          p.ProjectName,
+          l.LoanType,
+          l.LoanPhase
+        FROM banking.LoanProceeds lp
+        LEFT JOIN core.Project p ON lp.ProjectId = p.ProjectId
+        LEFT JOIN banking.Loan l ON lp.LoanId = l.LoanId
+        WHERE lp.LoanProceedsId = @id
+      `);
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'LoanProceeds not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getLoanProceedsByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query(`
+        SELECT 
+          lp.*,
+          l.LoanType,
+          l.LoanPhase
+        FROM banking.LoanProceeds lp
+        LEFT JOIN banking.Loan l ON lp.LoanId = l.LoanId
+        WHERE lp.ProjectId = @projectId
+        ORDER BY lp.ProceedsDate DESC, lp.LoanProceedsId DESC
+      `);
+    
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getLoanProceedsByLoan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { loanId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('loanId', sql.Int, loanId)
+      .query(`
+        SELECT 
+          lp.*,
+          p.ProjectName
+        FROM banking.LoanProceeds lp
+        LEFT JOIN core.Project p ON lp.ProjectId = p.ProjectId
+        WHERE lp.LoanId = @loanId
+        ORDER BY lp.ProceedsDate DESC, lp.LoanProceedsId DESC
+      `);
+    
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createLoanProceeds = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const {
+      ProjectId, LoanId, ProceedsDate, ProceedsAmount, CumulativeAmount,
+      DrawNumber, DrawDescription, Notes
+    } = req.body;
+
+    if (!ProjectId || !ProceedsDate || !ProceedsAmount) {
+      res.status(400).json({ success: false, error: { message: 'ProjectId, ProceedsDate, and ProceedsAmount are required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('ProjectId', sql.Int, ProjectId)
+      .input('LoanId', sql.Int, LoanId)
+      .input('ProceedsDate', sql.Date, ProceedsDate)
+      .input('ProceedsAmount', sql.Decimal(18, 2), ProceedsAmount)
+      .input('CumulativeAmount', sql.Decimal(18, 2), CumulativeAmount)
+      .input('DrawNumber', sql.Int, DrawNumber)
+      .input('DrawDescription', sql.NVarChar, DrawDescription)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .query(`
+        INSERT INTO banking.LoanProceeds (
+          ProjectId, LoanId, ProceedsDate, ProceedsAmount, CumulativeAmount,
+          DrawNumber, DrawDescription, Notes
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @ProjectId, @LoanId, @ProceedsDate, @ProceedsAmount, @CumulativeAmount,
+          @DrawNumber, @DrawDescription, @Notes
+        )
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or LoanId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const updateLoanProceeds = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const {
+      ProjectId, LoanId, ProceedsDate, ProceedsAmount, CumulativeAmount,
+      DrawNumber, DrawDescription, Notes
+    } = req.body;
+
+    const pool = await getConnection();
+    
+    // Build dynamic update query
+    const updates: string[] = [];
+    const request = pool.request().input('id', sql.Int, id);
+
+    if (ProjectId !== undefined) {
+      updates.push('ProjectId = @ProjectId');
+      request.input('ProjectId', sql.Int, ProjectId);
+    }
+    if (LoanId !== undefined) {
+      updates.push('LoanId = @LoanId');
+      request.input('LoanId', sql.Int, LoanId);
+    }
+    if (ProceedsDate !== undefined) {
+      updates.push('ProceedsDate = @ProceedsDate');
+      request.input('ProceedsDate', sql.Date, ProceedsDate);
+    }
+    if (ProceedsAmount !== undefined) {
+      updates.push('ProceedsAmount = @ProceedsAmount');
+      request.input('ProceedsAmount', sql.Decimal(18, 2), ProceedsAmount);
+    }
+    if (CumulativeAmount !== undefined) {
+      updates.push('CumulativeAmount = @CumulativeAmount');
+      request.input('CumulativeAmount', sql.Decimal(18, 2), CumulativeAmount);
+    }
+    if (DrawNumber !== undefined) {
+      updates.push('DrawNumber = @DrawNumber');
+      request.input('DrawNumber', sql.Int, DrawNumber);
+    }
+    if (DrawDescription !== undefined) {
+      updates.push('DrawDescription = @DrawDescription');
+      request.input('DrawDescription', sql.NVarChar, DrawDescription);
+    }
+    if (Notes !== undefined) {
+      updates.push('Notes = @Notes');
+      request.input('Notes', sql.NVarChar(sql.MAX), Notes);
+    }
+
+    if (updates.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'No fields to update' } });
+      return;
+    }
+
+    updates.push('UpdatedAt = SYSDATETIME()');
+
+    const result = await request.query(`
+      UPDATE banking.LoanProceeds
+      SET ${updates.join(', ')}
+      OUTPUT INSERTED.*
+      WHERE LoanProceedsId = @id
+    `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'LoanProceeds not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or LoanId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const deleteLoanProceeds = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM banking.LoanProceeds WHERE LoanProceedsId = @id');
+    
+    if (result.rowsAffected[0] === 0) {
+      res.status(404).json({ success: false, error: { message: 'LoanProceeds not found' } });
+      return;
+    }
+    
+    res.json({ success: true, message: 'LoanProceeds deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================================
+// GUARANTEE BURNDOWN CONTROLLER
+// ============================================================
+
+export const getAllGuaranteeBurndowns = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request().query(`
+      SELECT 
+        gb.*,
+        p.ProjectName,
+        per.FullName AS GuarantorName,
+        l.LoanType,
+        l.LoanPhase
+      FROM banking.GuaranteeBurndown gb
+      LEFT JOIN core.Project p ON gb.ProjectId = p.ProjectId
+      LEFT JOIN core.Person per ON gb.PersonId = per.PersonId
+      LEFT JOIN banking.Loan l ON gb.LoanId = l.LoanId
+      ORDER BY gb.BurndownDate DESC, gb.GuaranteeBurndownId DESC
+    `);
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getGuaranteeBurndownById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT 
+          gb.*,
+          p.ProjectName,
+          per.FullName AS GuarantorName,
+          l.LoanType,
+          l.LoanPhase
+        FROM banking.GuaranteeBurndown gb
+        LEFT JOIN core.Project p ON gb.ProjectId = p.ProjectId
+        LEFT JOIN core.Person per ON gb.PersonId = per.PersonId
+        LEFT JOIN banking.Loan l ON gb.LoanId = l.LoanId
+        WHERE gb.GuaranteeBurndownId = @id
+      `);
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'GuaranteeBurndown not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getGuaranteeBurndownsByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query(`
+        SELECT 
+          gb.*,
+          per.FullName AS GuarantorName,
+          l.LoanType,
+          l.LoanPhase
+        FROM banking.GuaranteeBurndown gb
+        LEFT JOIN core.Person per ON gb.PersonId = per.PersonId
+        LEFT JOIN banking.Loan l ON gb.LoanId = l.LoanId
+        WHERE gb.ProjectId = @projectId
+        ORDER BY gb.BurndownDate DESC, gb.GuaranteeBurndownId DESC
+      `);
+    
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getGuaranteeBurndownsByPerson = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { personId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('personId', sql.Int, personId)
+      .query(`
+        SELECT 
+          gb.*,
+          p.ProjectName,
+          l.LoanType,
+          l.LoanPhase
+        FROM banking.GuaranteeBurndown gb
+        LEFT JOIN core.Project p ON gb.ProjectId = p.ProjectId
+        LEFT JOIN banking.Loan l ON gb.LoanId = l.LoanId
+        WHERE gb.PersonId = @personId
+        ORDER BY gb.BurndownDate DESC, gb.GuaranteeBurndownId DESC
+      `);
+    
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createGuaranteeBurndown = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const {
+      ProjectId, LoanId, PersonId, BurndownDate, PreviousAmount, NewAmount,
+      ReductionAmount, PreviousPercent, NewPercent, BurndownReason, TriggeredBy, Notes
+    } = req.body;
+
+    if (!ProjectId || !PersonId || !BurndownDate || NewAmount === undefined) {
+      res.status(400).json({ success: false, error: { message: 'ProjectId, PersonId, BurndownDate, and NewAmount are required' } });
+      return;
+    }
+
+    // Calculate ReductionAmount if not provided
+    const calculatedReductionAmount = ReductionAmount !== undefined 
+      ? ReductionAmount 
+      : (PreviousAmount !== undefined && PreviousAmount !== null) 
+        ? PreviousAmount - NewAmount 
+        : null;
+
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('ProjectId', sql.Int, ProjectId)
+      .input('LoanId', sql.Int, LoanId)
+      .input('PersonId', sql.Int, PersonId)
+      .input('BurndownDate', sql.Date, BurndownDate)
+      .input('PreviousAmount', sql.Decimal(18, 2), PreviousAmount)
+      .input('NewAmount', sql.Decimal(18, 2), NewAmount)
+      .input('ReductionAmount', sql.Decimal(18, 2), calculatedReductionAmount)
+      .input('PreviousPercent', sql.Decimal(10, 4), PreviousPercent)
+      .input('NewPercent', sql.Decimal(10, 4), NewPercent)
+      .input('BurndownReason', sql.NVarChar, BurndownReason)
+      .input('TriggeredBy', sql.NVarChar, TriggeredBy)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .query(`
+        INSERT INTO banking.GuaranteeBurndown (
+          ProjectId, LoanId, PersonId, BurndownDate, PreviousAmount, NewAmount,
+          ReductionAmount, PreviousPercent, NewPercent, BurndownReason, TriggeredBy, Notes
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @ProjectId, @LoanId, @PersonId, @BurndownDate, @PreviousAmount, @NewAmount,
+          @ReductionAmount, @PreviousPercent, @NewPercent, @BurndownReason, @TriggeredBy, @Notes
+        )
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId, LoanId, or PersonId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const updateGuaranteeBurndown = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const {
+      ProjectId, LoanId, PersonId, BurndownDate, PreviousAmount, NewAmount,
+      ReductionAmount, PreviousPercent, NewPercent, BurndownReason, TriggeredBy, Notes
+    } = req.body;
+
+    const pool = await getConnection();
+    
+    // Build dynamic update query
+    const updates: string[] = [];
+    const request = pool.request().input('id', sql.Int, id);
+
+    if (ProjectId !== undefined) {
+      updates.push('ProjectId = @ProjectId');
+      request.input('ProjectId', sql.Int, ProjectId);
+    }
+    if (LoanId !== undefined) {
+      updates.push('LoanId = @LoanId');
+      request.input('LoanId', sql.Int, LoanId);
+    }
+    if (PersonId !== undefined) {
+      updates.push('PersonId = @PersonId');
+      request.input('PersonId', sql.Int, PersonId);
+    }
+    if (BurndownDate !== undefined) {
+      updates.push('BurndownDate = @BurndownDate');
+      request.input('BurndownDate', sql.Date, BurndownDate);
+    }
+    if (PreviousAmount !== undefined) {
+      updates.push('PreviousAmount = @PreviousAmount');
+      request.input('PreviousAmount', sql.Decimal(18, 2), PreviousAmount);
+    }
+    if (NewAmount !== undefined) {
+      updates.push('NewAmount = @NewAmount');
+      request.input('NewAmount', sql.Decimal(18, 2), NewAmount);
+    }
+    if (ReductionAmount !== undefined) {
+      updates.push('ReductionAmount = @ReductionAmount');
+      request.input('ReductionAmount', sql.Decimal(18, 2), ReductionAmount);
+    }
+    if (PreviousPercent !== undefined) {
+      updates.push('PreviousPercent = @PreviousPercent');
+      request.input('PreviousPercent', sql.Decimal(10, 4), PreviousPercent);
+    }
+    if (NewPercent !== undefined) {
+      updates.push('NewPercent = @NewPercent');
+      request.input('NewPercent', sql.Decimal(10, 4), NewPercent);
+    }
+    if (BurndownReason !== undefined) {
+      updates.push('BurndownReason = @BurndownReason');
+      request.input('BurndownReason', sql.NVarChar, BurndownReason);
+    }
+    if (TriggeredBy !== undefined) {
+      updates.push('TriggeredBy = @TriggeredBy');
+      request.input('TriggeredBy', sql.NVarChar, TriggeredBy);
+    }
+    if (Notes !== undefined) {
+      updates.push('Notes = @Notes');
+      request.input('Notes', sql.NVarChar(sql.MAX), Notes);
+    }
+
+    if (updates.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'No fields to update' } });
+      return;
+    }
+
+    updates.push('UpdatedAt = SYSDATETIME()');
+
+    const result = await request.query(`
+      UPDATE banking.GuaranteeBurndown
+      SET ${updates.join(', ')}
+      OUTPUT INSERTED.*
+      WHERE GuaranteeBurndownId = @id
+    `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'GuaranteeBurndown not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId, LoanId, or PersonId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const deleteGuaranteeBurndown = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM banking.GuaranteeBurndown WHERE GuaranteeBurndownId = @id');
+    
+    if (result.rowsAffected[0] === 0) {
+      res.status(404).json({ success: false, error: { message: 'GuaranteeBurndown not found' } });
+      return;
+    }
+    
+    res.json({ success: true, message: 'GuaranteeBurndown deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};

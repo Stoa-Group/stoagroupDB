@@ -170,6 +170,82 @@ export const deleteProject = async (req: Request, res: Response, next: NextFunct
   try {
     const { id } = req.params;
     const pool = await getConnection();
+    
+    // First, check what records are preventing deletion
+    const checkResult = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        DECLARE @ProjectId INT = @id;
+        DECLARE @AssociatedRecords TABLE (
+          TableName NVARCHAR(255),
+          RecordCount INT,
+          TableDescription NVARCHAR(255)
+        );
+        
+        -- Check banking tables
+        IF EXISTS (SELECT 1 FROM banking.Loan WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.Loan', (SELECT COUNT(*) FROM banking.Loan WHERE ProjectId = @ProjectId), 'Loans');
+        
+        IF EXISTS (SELECT 1 FROM banking.DSCRTest WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.DSCRTest', (SELECT COUNT(*) FROM banking.DSCRTest WHERE ProjectId = @ProjectId), 'DSCR Tests');
+        
+        IF EXISTS (SELECT 1 FROM banking.Participation WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.Participation', (SELECT COUNT(*) FROM banking.Participation WHERE ProjectId = @ProjectId), 'Participations');
+        
+        IF EXISTS (SELECT 1 FROM banking.Guarantee WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.Guarantee', (SELECT COUNT(*) FROM banking.Guarantee WHERE ProjectId = @ProjectId), 'Guarantees');
+        
+        IF EXISTS (SELECT 1 FROM banking.Covenant WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.Covenant', (SELECT COUNT(*) FROM banking.Covenant WHERE ProjectId = @ProjectId), 'Covenants');
+        
+        IF EXISTS (SELECT 1 FROM banking.LiquidityRequirement WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.LiquidityRequirement', (SELECT COUNT(*) FROM banking.LiquidityRequirement WHERE ProjectId = @ProjectId), 'Liquidity Requirements');
+        
+        IF EXISTS (SELECT 1 FROM banking.EquityCommitment WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.EquityCommitment', (SELECT COUNT(*) FROM banking.EquityCommitment WHERE ProjectId = @ProjectId), 'Equity Commitments');
+        
+        IF EXISTS (SELECT 1 FROM banking.LoanProceeds WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.LoanProceeds', (SELECT COUNT(*) FROM banking.LoanProceeds WHERE ProjectId = @ProjectId), 'Loan Proceeds');
+        
+        IF EXISTS (SELECT 1 FROM banking.GuaranteeBurndown WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('banking.GuaranteeBurndown', (SELECT COUNT(*) FROM banking.GuaranteeBurndown WHERE ProjectId = @ProjectId), 'Guarantee Burndowns');
+        
+        -- Check pipeline tables
+        IF EXISTS (SELECT 1 FROM pipeline.UnderContract WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('pipeline.UnderContract', (SELECT COUNT(*) FROM pipeline.UnderContract WHERE ProjectId = @ProjectId), 'Under Contract Properties');
+        
+        IF EXISTS (SELECT 1 FROM pipeline.CommercialListed WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('pipeline.CommercialListed', (SELECT COUNT(*) FROM pipeline.CommercialListed WHERE ProjectId = @ProjectId), 'Commercial Listed Properties');
+        
+        IF EXISTS (SELECT 1 FROM pipeline.CommercialAcreage WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('pipeline.CommercialAcreage', (SELECT COUNT(*) FROM pipeline.CommercialAcreage WHERE ProjectId = @ProjectId), 'Commercial Acreage');
+        
+        IF EXISTS (SELECT 1 FROM pipeline.ClosedProperty WHERE ProjectId = @ProjectId)
+          INSERT INTO @AssociatedRecords VALUES ('pipeline.ClosedProperty', (SELECT COUNT(*) FROM pipeline.ClosedProperty WHERE ProjectId = @ProjectId), 'Closed Properties');
+        
+        SELECT * FROM @AssociatedRecords ORDER BY TableName;
+      `);
+    
+    if (checkResult.recordset.length > 0) {
+      const associatedRecords = checkResult.recordset.map((r: any) => ({
+        table: r.TableName,
+        count: r.RecordCount,
+        description: r.TableDescription
+      }));
+      
+      const recordList = associatedRecords.map((r: any) => `${r.description} (${r.count})`).join(', ');
+      
+      res.status(409).json({ 
+        success: false, 
+        error: { 
+          message: `Cannot delete project: it has associated records in the following tables: ${recordList}`,
+          associatedRecords: associatedRecords
+        } 
+      });
+      return;
+    }
+    
+    // If no associated records, proceed with deletion
     const result = await pool.request()
       .input('id', sql.Int, id)
       .query('DELETE FROM core.Project WHERE ProjectId = @id');
@@ -181,8 +257,8 @@ export const deleteProject = async (req: Request, res: Response, next: NextFunct
 
     res.json({ success: true, message: 'Project deleted successfully' });
   } catch (error: any) {
-    if (error.number === 547) { // Foreign key constraint violation
-      res.status(409).json({ success: false, error: { message: 'Cannot delete project with associated records' } });
+    if (error.number === 547) { // Foreign key constraint violation (fallback)
+      res.status(409).json({ success: false, error: { message: 'Cannot delete project with associated records. Please delete associated records first.' } });
       return;
     }
     next(error);
