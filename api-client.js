@@ -383,11 +383,43 @@
 /**
  * Create a new loan (REQUIRES AUTHENTICATION)
  * @param {object} data - Loan data
+ * @param {number} data.ProjectId - Required: Project ID
+ * @param {string} data.LoanPhase - Required: 'Construction', 'Permanent', 'MiniPerm', 'Land', or 'Other'
+ * @param {string} [data.FixedOrFloating] - Selection: 'Fixed' or 'Floating' (NULL allowed)
+ * @param {string} [data.IndexName] - For Construction loans: 'Prime' or 'SOFR' (NULL allowed for Fixed rates)
+ * @param {string} [data.Spread] - Spread value (e.g., "2.75%", "0.50%")
+ * @param {string} [data.InterestRate] - Interest rate (for fixed rates or complex expressions)
+ * @param {number} [data.LoanAmount] - Loan amount
+ * @param {string} [data.LoanClosingDate] - Loan closing date (YYYY-MM-DD)
+ * @param {string} [data.MaturityDate] - Maturity date (YYYY-MM-DD)
+ * @param {number} [data.LenderId] - Bank/Lender ID (FK to core.Bank)
+ * @param {string} [data.LoanType] - Loan type (e.g., "LOC - Construction", "RLOC - Land")
+ * @param {string} [data.Borrower] - Borrower name
+ * @param {string} [data.FinancingStage] - Financing stage
+ * @param {number} [data.BirthOrder] - Birth order from Banking Dashboard
+ * @param {string} [data.ConstructionCompletionDate] - Target completion date (text: "May-23", "Dec-25")
+ * @param {string} [data.LeaseUpCompletedDate] - Target lease-up date (text: "Apr-25")
+ * @param {string} [data.IOMaturityDate] - I/O maturity date (YYYY-MM-DD)
+ * @param {string} [data.MiniPermMaturity] - Mini-perm maturity date (YYYY-MM-DD)
+ * @param {string} [data.MiniPermInterestRate] - Mini-perm interest rate
+ * @param {string} [data.PermPhaseMaturity] - Perm-phase maturity date (YYYY-MM-DD)
+ * @param {string} [data.PermPhaseInterestRate] - Perm-phase interest rate
+ * @param {string} [data.PermanentCloseDate] - Permanent close date (YYYY-MM-DD)
+ * @param {number} [data.PermanentLoanAmount] - Permanent loan amount
+ * @param {string} [data.Notes] - Notes
+ * @returns {Promise<object>} { success: true, data: { LoanId, ... } }
  * @example
  * // First login and store token
  * await login('arovner@stoagroup.com', 'CapitalMarkets26');
  * // Then create loan
- * await createLoan({ ProjectId: 1, LoanPhase: 'Construction', ... });
+ * await createLoan({ 
+ *   ProjectId: 1, 
+ *   LoanPhase: 'Construction',
+ *   FixedOrFloating: 'Floating',
+ *   IndexName: 'SOFR',
+ *   Spread: '2.75%',
+ *   LoanAmount: 5000000
+ * });
  */
   async function createLoan(data) {
   return apiRequest('/api/banking/loans', 'POST', data);
@@ -396,7 +428,37 @@
 /**
  * Update a loan (REQUIRES AUTHENTICATION)
  * @param {number} id - Loan ID
- * @param {object} data - Updated loan data
+ * @param {object} data - Updated loan data (only include fields to update)
+ * @param {string} [data.FixedOrFloating] - Selection: 'Fixed' or 'Floating' (NULL allowed)
+ * @param {string} [data.IndexName] - For Construction loans: 'Prime' or 'SOFR' (NULL allowed for Fixed rates)
+ * @param {string} [data.Spread] - Spread value (e.g., "2.75%", "0.50%")
+ * @param {string} [data.InterestRate] - Interest rate
+ * @param {number} [data.LoanAmount] - Loan amount
+ * @param {string} [data.LoanClosingDate] - Loan closing date (YYYY-MM-DD)
+ * @param {string} [data.MaturityDate] - Maturity date (YYYY-MM-DD)
+ * @param {number} [data.LenderId] - Bank/Lender ID
+ * @param {string} [data.LoanPhase] - Loan phase
+ * @param {string} [data.LoanType] - Loan type
+ * @param {string} [data.Borrower] - Borrower name
+ * @param {string} [data.FinancingStage] - Financing stage
+ * @param {number} [data.BirthOrder] - Birth order
+ * @param {string} [data.ConstructionCompletionDate] - Target completion date
+ * @param {string} [data.LeaseUpCompletedDate] - Target lease-up date
+ * @param {string} [data.IOMaturityDate] - I/O maturity date
+ * @param {string} [data.MiniPermMaturity] - Mini-perm maturity date
+ * @param {string} [data.MiniPermInterestRate] - Mini-perm interest rate
+ * @param {string} [data.PermPhaseMaturity] - Perm-phase maturity date
+ * @param {string} [data.PermPhaseInterestRate] - Perm-phase interest rate
+ * @param {string} [data.PermanentCloseDate] - Permanent close date
+ * @param {number} [data.PermanentLoanAmount] - Permanent loan amount
+ * @param {string} [data.Notes] - Notes
+ * @returns {Promise<object>} { success: true, data: { LoanId, ... } }
+ * @example
+ * await updateLoan(1, { 
+ *   FixedOrFloating: 'Floating',
+ *   IndexName: 'Prime',
+ *   Spread: '2.50%'
+ * });
  */
   async function updateLoan(id, data) {
   return apiRequest(`/api/banking/loans/${id}`, 'PUT', data);
@@ -404,8 +466,14 @@
 
 /**
  * Update loan by ProjectId (REQUIRES AUTHENTICATION)
+ * Updates the first loan found for the project
  * @param {number} projectId - Project ID
- * @param {object} data - Updated loan data
+ * @param {object} data - Updated loan data (only include fields to update)
+ * @param {string} [data.FixedOrFloating] - Selection: 'Fixed' or 'Floating' (NULL allowed)
+ * @param {string} [data.IndexName] - For Construction loans: 'Prime' or 'SOFR' (NULL allowed for Fixed rates)
+ * @param {string} [data.Spread] - Spread value
+ * @param {number} [data.LoanAmount] - Loan amount
+ * @returns {Promise<object>} { success: true, data: { LoanId, ... } }
  */
   async function updateLoanByProject(projectId, data) {
   return apiRequest(`/api/banking/loans/project/${projectId}`, 'PUT', data);
@@ -1475,6 +1543,18 @@ console.log('Updated:', updated.data);
 const loans = await getLoansByProject(1);
 console.log('Loans:', loans.data);
 
+// Example 4b: Create a construction loan with FixedOrFloating and IndexName
+const constructionLoan = await createLoan({
+  ProjectId: 1,
+  LoanPhase: 'Construction',
+  FixedOrFloating: 'Floating',  // Must be 'Fixed' or 'Floating'
+  IndexName: 'SOFR',            // For Construction: 'Prime' or 'SOFR'
+  Spread: '2.75%',
+  LoanAmount: 5000000,
+  LenderId: 5
+});
+console.log('Created loan:', constructionLoan.data);
+
 // Example 5: Create an equity commitment
 const commitment = await createEquityCommitment({
   ProjectId: 1,
@@ -1519,6 +1599,9 @@ if (loginResult.success) {
   const loanData = {
     ProjectId: 1,
     LoanPhase: 'Construction',
+    FixedOrFloating: 'Floating',  // Selection: 'Fixed' or 'Floating'
+    IndexName: 'SOFR',            // For Construction: 'Prime' or 'SOFR'
+    Spread: '2.75%',
     LoanAmount: 5000000,
     LoanClosingDate: '2024-01-15',
     FinancingStage: 'Construction Loan'
@@ -1528,7 +1611,11 @@ if (loginResult.success) {
   console.log('✅ Loan created:', createResult.data);
   
   // Step 3: Update operations also work automatically with stored token
-  await updateLoan(createResult.data.LoanId, { LoanAmount: 5500000 });
+  await updateLoan(createResult.data.LoanId, { 
+    LoanAmount: 5500000,
+    FixedOrFloating: 'Floating',
+    IndexName: 'Prime'  // Changed from SOFR to Prime
+  });
   
   // Step 4: Verify token is still valid
   const verifyResult = await verifyAuth();
