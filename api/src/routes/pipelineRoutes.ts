@@ -19,8 +19,9 @@ router.post('/commercial-listed', pipelineController.createCommercialListed);
 router.put('/commercial-listed/:id', pipelineController.updateCommercialListed);
 router.delete('/commercial-listed/:id', pipelineController.deleteCommercialListed);
 
-// Commercial Acreage routes
+// Commercial Acreage routes (Land Development - Land We Own)
 router.get('/commercial-acreage', pipelineController.getAllCommercialAcreage);
+router.get('/commercial-acreage/project/:projectId', pipelineController.getCommercialAcreageByProjectId); // Get by ProjectId (must come before /:id)
 router.get('/commercial-acreage/:id', pipelineController.getCommercialAcreageById);
 router.post('/commercial-acreage', pipelineController.createCommercialAcreage);
 router.put('/commercial-acreage/:id', pipelineController.updateCommercialAcreage);

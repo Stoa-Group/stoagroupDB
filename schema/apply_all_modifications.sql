@@ -568,6 +568,29 @@ END
 GO
 
 -- ============================================================
+-- 10. UPDATE PIPELINE.COMMERCIALACREAGE FOR LAND DEVELOPMENT
+-- ============================================================
+PRINT '';
+PRINT '10. Updating pipeline.CommercialAcreage for Land Development...';
+
+-- Remove redundant columns (Location) - pull from CORE instead
+IF EXISTS (
+    SELECT 1 
+    FROM sys.columns 
+    WHERE object_id = OBJECT_ID('pipeline.CommercialAcreage') 
+    AND name = 'Location'
+)
+BEGIN
+    ALTER TABLE pipeline.CommercialAcreage DROP COLUMN Location;
+    PRINT '   ✓ Removed Location column (use City/State from core.Project)';
+END
+ELSE
+BEGIN
+    PRINT '   ✓ Location column does not exist';
+END
+GO
+
+-- ============================================================
 -- SUMMARY
 -- ============================================================
 PRINT '';
@@ -617,6 +640,11 @@ PRINT '  ✓ Land Development specific fields: ListedDate, Acreage, LandPrice,';
 PRINT '    ListingStatus (Available, Under Contract, Sold), DueDiligenceDate,';
 PRINT '    ClosingDate, Owner, PurchasingEntity, Broker, Notes';
 PRINT '  → Use API endpoints: GET/POST/PUT/DELETE /api/pipeline/commercial-listed';
+PRINT '';
+PRINT '  ✓ pipeline.CommercialAcreage - Removed redundant fields (Location)';
+PRINT '  ✓ Now pulls CORE data from core.Project';
+PRINT '  ✓ Land Development specific fields: Acreage, SquareFootage, BuildingFootprintSF';
+PRINT '  → Use API endpoints: GET/POST/PUT/DELETE /api/pipeline/commercial-acreage';
 PRINT '';
 PRINT 'Next steps:';
 PRINT '  1. Run: npm run db:seed-auth-users (in api directory)';

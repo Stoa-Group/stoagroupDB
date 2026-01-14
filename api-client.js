@@ -769,23 +769,78 @@ export async function deleteCommercialListed(id) {
   return apiRequest(`/api/pipeline/commercial-listed/${id}`, 'DELETE');
 }
 
-// COMMERCIAL ACREAGE
+// ============================================================
+// LAND DEVELOPMENT - COMMERCIAL ACREAGE (Land We Own)
+// ============================================================
+/**
+ * Get all commercial acreage records with CORE and Land Development data
+ * Returns: ProjectName, City, State (from CORE),
+ *          plus Land Development specific: Acreage, SquareFootage, BuildingFootprintSF
+ * @returns {Promise<object>} { success: true, data: [{...}] }
+ */
 export async function getAllCommercialAcreage() {
   return apiRequest('/api/pipeline/commercial-acreage');
 }
 
+/**
+ * Get commercial acreage record by ID
+ * @param {number} id - Commercial Acreage ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
 export async function getCommercialAcreageById(id) {
   return apiRequest(`/api/pipeline/commercial-acreage/${id}`);
 }
 
+/**
+ * Get commercial acreage record by Project ID
+ * @param {number} projectId - Project ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+export async function getCommercialAcreageByProjectId(projectId) {
+  return apiRequest(`/api/pipeline/commercial-acreage/project/${projectId}`);
+}
+
+/**
+ * Create a new commercial acreage record (Land Development - Land We Own)
+ * 
+ * CORE attributes (pulled from core.Project):
+ * - ProjectName, City, State (from CORE)
+ * 
+ * Land Development specific attributes (stored in pipeline.CommercialAcreage):
+ * @param {object} data - {
+ *   ProjectId: number (required),
+ *   Acreage?: number,
+ *   SquareFootage?: number,
+ *   BuildingFootprintSF?: number
+ * }
+ * @returns {Promise<object>} { success: true, data: {...} }
+ * @example
+ * await createCommercialAcreage({
+ *   ProjectId: 1,
+ *   Acreage: 25.5,
+ *   SquareFootage: 1110780,
+ *   BuildingFootprintSF: 50000
+ * });
+ */
 export async function createCommercialAcreage(data) {
   return apiRequest('/api/pipeline/commercial-acreage', 'POST', data);
 }
 
+/**
+ * Update a commercial acreage record (Land Development)
+ * @param {number} id - Commercial Acreage ID
+ * @param {object} data - Fields to update (same as createCommercialAcreage)
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
 export async function updateCommercialAcreage(id, data) {
   return apiRequest(`/api/pipeline/commercial-acreage/${id}`, 'PUT', data);
 }
 
+/**
+ * Delete a commercial acreage record
+ * @param {number} id - Commercial Acreage ID
+ * @returns {Promise<object>} { success: true, message: '...' }
+ */
 export async function deleteCommercialAcreage(id) {
   return apiRequest(`/api/pipeline/commercial-acreage/${id}`, 'DELETE');
 }

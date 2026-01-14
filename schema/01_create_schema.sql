@@ -321,13 +321,15 @@ CREATE TABLE pipeline.CommercialListed (
 );
 
 -- ============================================================
--- PIPELINE: COMMERCIAL ACREAGE
+-- PIPELINE: COMMERCIAL ACREAGE (Land Development - Land We Own)
 -- ============================================================
+-- Note: CORE attributes (ProjectName, City, State) are pulled from core.Project
+--       Only Land Development specific attributes are stored here
 CREATE TABLE pipeline.CommercialAcreage (
     CommercialAcreageId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CommercialAcreage PRIMARY KEY,
     ProjectId           INT NOT NULL,
     
-    Location            NVARCHAR(255) NULL,
+    -- Land Development specific attributes (no redundant CORE data)
     Acreage             DECIMAL(18,4) NULL,
     SquareFootage       DECIMAL(18,2) NULL,
     BuildingFootprintSF DECIMAL(18,2) NULL,

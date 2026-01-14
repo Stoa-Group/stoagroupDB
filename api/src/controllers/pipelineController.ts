@@ -768,8 +768,19 @@ export const deleteCommercialListed = async (req: Request, res: Response, next: 
 export const getAllCommercialAcreage = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await getConnection();
+    // Pull CORE data and Land Development specific data
     const result = await pool.request().query(`
-      SELECT ca.*, p.ProjectName
+      SELECT 
+        ca.CommercialAcreageId,
+        ca.ProjectId,
+        -- CORE attributes (from core.Project)
+        p.ProjectName,
+        p.City,
+        p.State,
+        -- Land Development specific attributes
+        ca.Acreage,
+        ca.SquareFootage,
+        ca.BuildingFootprintSF
       FROM pipeline.CommercialAcreage ca
       LEFT JOIN core.Project p ON ca.ProjectId = p.ProjectId
       ORDER BY ca.CommercialAcreageId
@@ -784,9 +795,25 @@ export const getCommercialAcreageById = async (req: Request, res: Response, next
   try {
     const { id } = req.params;
     const pool = await getConnection();
+    // Pull CORE data and Land Development specific data
     const result = await pool.request()
       .input('id', sql.Int, id)
-      .query('SELECT * FROM pipeline.CommercialAcreage WHERE CommercialAcreageId = @id');
+      .query(`
+        SELECT 
+          ca.CommercialAcreageId,
+          ca.ProjectId,
+          -- CORE attributes (from core.Project)
+          p.ProjectName,
+          p.City,
+          p.State,
+          -- Land Development specific attributes
+          ca.Acreage,
+          ca.SquareFootage,
+          ca.BuildingFootprintSF
+        FROM pipeline.CommercialAcreage ca
+        LEFT JOIN core.Project p ON ca.ProjectId = p.ProjectId
+        WHERE ca.CommercialAcreageId = @id
+      `);
     
     if (result.recordset.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Commercial Acreage record not found' } });
@@ -799,9 +826,50 @@ export const getCommercialAcreageById = async (req: Request, res: Response, next
   }
 };
 
+export const getCommercialAcreageByProjectId = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    // Pull CORE data and Land Development specific data
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query(`
+        SELECT 
+          ca.CommercialAcreageId,
+          ca.ProjectId,
+          -- CORE attributes (from core.Project)
+          p.ProjectName,
+          p.City,
+          p.State,
+          -- Land Development specific attributes
+          ca.Acreage,
+          ca.SquareFootage,
+          ca.BuildingFootprintSF
+        FROM pipeline.CommercialAcreage ca
+        LEFT JOIN core.Project p ON ca.ProjectId = p.ProjectId
+        WHERE ca.ProjectId = @projectId
+      `);
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Commercial Acreage record for this project not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createCommercialAcreage = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { ProjectId, Location, Acreage, SquareFootage, BuildingFootprintSF } = req.body;
+    const {
+      ProjectId,
+      // Land Development specific attributes
+      Acreage,
+      SquareFootage,
+      BuildingFootprintSF
+    } = req.body;
 
     if (!ProjectId) {
       res.status(400).json({ success: false, error: { message: 'ProjectId is required' } });
@@ -809,19 +877,38 @@ export const createCommercialAcreage = async (req: Request, res: Response, next:
     }
 
     const pool = await getConnection();
+    
+    // Insert Land Development specific data
     const result = await pool.request()
       .input('ProjectId', sql.Int, ProjectId)
-      .input('Location', sql.NVarChar, Location)
       .input('Acreage', sql.Decimal(18, 4), Acreage)
       .input('SquareFootage', sql.Decimal(18, 2), SquareFootage)
       .input('BuildingFootprintSF', sql.Decimal(18, 2), BuildingFootprintSF)
       .query(`
-        INSERT INTO pipeline.CommercialAcreage (ProjectId, Location, Acreage, SquareFootage, BuildingFootprintSF)
+        INSERT INTO pipeline.CommercialAcreage (ProjectId, Acreage, SquareFootage, BuildingFootprintSF)
         OUTPUT INSERTED.*
-        VALUES (@ProjectId, @Location, @Acreage, @SquareFootage, @BuildingFootprintSF)
+        VALUES (@ProjectId, @Acreage, @SquareFootage, @BuildingFootprintSF)
       `);
 
-    res.status(201).json({ success: true, data: result.recordset[0] });
+    // Get the full record with CORE data
+    const fullRecord = await pool.request()
+      .input('id', sql.Int, result.recordset[0].CommercialAcreageId)
+      .query(`
+        SELECT 
+          ca.CommercialAcreageId,
+          ca.ProjectId,
+          p.ProjectName,
+          p.City,
+          p.State,
+          ca.Acreage,
+          ca.SquareFootage,
+          ca.BuildingFootprintSF
+        FROM pipeline.CommercialAcreage ca
+        LEFT JOIN core.Project p ON ca.ProjectId = p.ProjectId
+        WHERE ca.CommercialAcreageId = @id
+      `);
+
+    res.status(201).json({ success: true, data: fullRecord.recordset[0] });
   } catch (error: any) {
     if (error.number === 2627) {
       res.status(409).json({ success: false, error: { message: 'Commercial Acreage record for this project already exists' } });
@@ -838,46 +925,67 @@ export const createCommercialAcreage = async (req: Request, res: Response, next:
 export const updateCommercialAcreage = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const acreageData = req.body;
+    const {
+      // Land Development specific attributes
+      Acreage,
+      SquareFootage,
+      BuildingFootprintSF
+    } = req.body;
 
     const pool = await getConnection();
+    
+    // Build dynamic update query for Land Development fields
+    const fields: string[] = [];
     const request = pool.request().input('id', sql.Int, id);
 
-    // Build dynamic update query - only update fields that are provided
-    const fields: string[] = [];
-    Object.keys(acreageData).forEach((key) => {
-      if (key !== 'CommercialAcreageId' && acreageData[key] !== undefined) {
-        fields.push(`${key} = @${key}`);
-        if (key === 'ProjectId') {
-          request.input(key, sql.Int, acreageData[key]);
-        } else if (key === 'Acreage') {
-          request.input(key, sql.Decimal(18, 4), acreageData[key]);
-        } else if (key === 'SquareFootage' || key === 'BuildingFootprintSF') {
-          request.input(key, sql.Decimal(18, 2), acreageData[key]);
-        } else {
-          request.input(key, sql.NVarChar, acreageData[key]);
-        }
-      }
-    });
+    if (Acreage !== undefined) {
+      fields.push('Acreage = @Acreage');
+      request.input('Acreage', sql.Decimal(18, 4), Acreage);
+    }
+    if (SquareFootage !== undefined) {
+      fields.push('SquareFootage = @SquareFootage');
+      request.input('SquareFootage', sql.Decimal(18, 2), SquareFootage);
+    }
+    if (BuildingFootprintSF !== undefined) {
+      fields.push('BuildingFootprintSF = @BuildingFootprintSF');
+      request.input('BuildingFootprintSF', sql.Decimal(18, 2), BuildingFootprintSF);
+    }
 
     if (fields.length === 0) {
       res.status(400).json({ success: false, error: { message: 'No fields to update' } });
       return;
     }
 
-    const result = await request.query(`
+    await request.query(`
       UPDATE pipeline.CommercialAcreage
       SET ${fields.join(', ')}
-      WHERE CommercialAcreageId = @id;
-      SELECT * FROM pipeline.CommercialAcreage WHERE CommercialAcreageId = @id;
+      WHERE CommercialAcreageId = @id
     `);
 
-    if (result.recordset.length === 0) {
+    // Get the updated record with CORE data
+    const updated = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT 
+          ca.CommercialAcreageId,
+          ca.ProjectId,
+          p.ProjectName,
+          p.City,
+          p.State,
+          ca.Acreage,
+          ca.SquareFootage,
+          ca.BuildingFootprintSF
+        FROM pipeline.CommercialAcreage ca
+        LEFT JOIN core.Project p ON ca.ProjectId = p.ProjectId
+        WHERE ca.CommercialAcreageId = @id
+      `);
+
+    if (updated.recordset.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Commercial Acreage record not found' } });
       return;
     }
 
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: updated.recordset[0] });
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId' } });
