@@ -1072,10 +1072,31 @@ export const getCovenantsByProject = async (req: Request, res: Response, next: N
 
 export const createCovenant = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { ProjectId, LoanId, CovenantType, CovenantDate, Requirement, ProjectedValue, Notes } = req.body;
+    const { 
+      ProjectId, LoanId, CovenantType,
+      // DSCR fields
+      DSCRTestDate, ProjectedInterestRate, DSCRRequirement, ProjectedDSCR,
+      // Occupancy fields
+      OccupancyCovenantDate, OccupancyRequirement, ProjectedOccupancy,
+      // Liquidity Requirement fields
+      LiquidityRequirementLendingBank,
+      // Other fields (legacy)
+      CovenantDate, Requirement, ProjectedValue,
+      Notes 
+    } = req.body;
 
     if (!ProjectId || !CovenantType) {
       res.status(400).json({ success: false, error: { message: 'ProjectId and CovenantType are required' } });
+      return;
+    }
+
+    // Validate CovenantType
+    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'];
+    if (!validTypes.includes(CovenantType)) {
+      res.status(400).json({ 
+        success: false, 
+        error: { message: `CovenantType must be one of: ${validTypes.join(', ')}` } 
+      });
       return;
     }
 
@@ -1084,14 +1105,40 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
       .input('ProjectId', sql.Int, ProjectId)
       .input('LoanId', sql.Int, LoanId)
       .input('CovenantType', sql.NVarChar, CovenantType)
+      // DSCR fields
+      .input('DSCRTestDate', sql.Date, DSCRTestDate)
+      .input('ProjectedInterestRate', sql.NVarChar, ProjectedInterestRate)
+      .input('DSCRRequirement', sql.NVarChar, DSCRRequirement)
+      .input('ProjectedDSCR', sql.NVarChar, ProjectedDSCR)
+      // Occupancy fields
+      .input('OccupancyCovenantDate', sql.Date, OccupancyCovenantDate)
+      .input('OccupancyRequirement', sql.NVarChar, OccupancyRequirement)
+      .input('ProjectedOccupancy', sql.NVarChar, ProjectedOccupancy)
+      // Liquidity Requirement fields
+      .input('LiquidityRequirementLendingBank', sql.Decimal(18, 2), LiquidityRequirementLendingBank)
+      // Other fields (legacy)
       .input('CovenantDate', sql.Date, CovenantDate)
       .input('Requirement', sql.NVarChar, Requirement)
       .input('ProjectedValue', sql.NVarChar, ProjectedValue)
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .query(`
-        INSERT INTO banking.Covenant (ProjectId, LoanId, CovenantType, CovenantDate, Requirement, ProjectedValue, Notes)
+        INSERT INTO banking.Covenant (
+          ProjectId, LoanId, CovenantType,
+          DSCRTestDate, ProjectedInterestRate, DSCRRequirement, ProjectedDSCR,
+          OccupancyCovenantDate, OccupancyRequirement, ProjectedOccupancy,
+          LiquidityRequirementLendingBank,
+          CovenantDate, Requirement, ProjectedValue,
+          Notes
+        )
         OUTPUT INSERTED.*
-        VALUES (@ProjectId, @LoanId, @CovenantType, @CovenantDate, @Requirement, @ProjectedValue, @Notes)
+        VALUES (
+          @ProjectId, @LoanId, @CovenantType,
+          @DSCRTestDate, @ProjectedInterestRate, @DSCRRequirement, @ProjectedDSCR,
+          @OccupancyCovenantDate, @OccupancyRequirement, @ProjectedOccupancy,
+          @LiquidityRequirementLendingBank,
+          @CovenantDate, @Requirement, @ProjectedValue,
+          @Notes
+        )
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -1111,10 +1158,31 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
 export const createCovenantByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { projectId } = req.params;
-    const { CovenantType, CovenantDate, Requirement, ProjectedValue, Notes } = req.body;
+    const { 
+      CovenantType,
+      // DSCR fields
+      DSCRTestDate, ProjectedInterestRate, DSCRRequirement, ProjectedDSCR,
+      // Occupancy fields
+      OccupancyCovenantDate, OccupancyRequirement, ProjectedOccupancy,
+      // Liquidity Requirement fields
+      LiquidityRequirementLendingBank,
+      // Other fields (legacy)
+      CovenantDate, Requirement, ProjectedValue,
+      Notes 
+    } = req.body;
 
     if (!CovenantType) {
       res.status(400).json({ success: false, error: { message: 'CovenantType is required' } });
+      return;
+    }
+
+    // Validate CovenantType
+    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'];
+    if (!validTypes.includes(CovenantType)) {
+      res.status(400).json({ 
+        success: false, 
+        error: { message: `CovenantType must be one of: ${validTypes.join(', ')}` } 
+      });
       return;
     }
 
@@ -1142,14 +1210,40 @@ export const createCovenantByProject = async (req: Request, res: Response, next:
       .input('ProjectId', sql.Int, projectId)
       .input('LoanId', sql.Int, loanId)
       .input('CovenantType', sql.NVarChar, CovenantType)
+      // DSCR fields
+      .input('DSCRTestDate', sql.Date, DSCRTestDate)
+      .input('ProjectedInterestRate', sql.NVarChar, ProjectedInterestRate)
+      .input('DSCRRequirement', sql.NVarChar, DSCRRequirement)
+      .input('ProjectedDSCR', sql.NVarChar, ProjectedDSCR)
+      // Occupancy fields
+      .input('OccupancyCovenantDate', sql.Date, OccupancyCovenantDate)
+      .input('OccupancyRequirement', sql.NVarChar, OccupancyRequirement)
+      .input('ProjectedOccupancy', sql.NVarChar, ProjectedOccupancy)
+      // Liquidity Requirement fields
+      .input('LiquidityRequirementLendingBank', sql.Decimal(18, 2), LiquidityRequirementLendingBank)
+      // Other fields (legacy)
       .input('CovenantDate', sql.Date, CovenantDate)
       .input('Requirement', sql.NVarChar, Requirement)
       .input('ProjectedValue', sql.NVarChar, ProjectedValue)
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .query(`
-        INSERT INTO banking.Covenant (ProjectId, LoanId, CovenantType, CovenantDate, Requirement, ProjectedValue, Notes)
+        INSERT INTO banking.Covenant (
+          ProjectId, LoanId, CovenantType,
+          DSCRTestDate, ProjectedInterestRate, DSCRRequirement, ProjectedDSCR,
+          OccupancyCovenantDate, OccupancyRequirement, ProjectedOccupancy,
+          LiquidityRequirementLendingBank,
+          CovenantDate, Requirement, ProjectedValue,
+          Notes
+        )
         OUTPUT INSERTED.*
-        VALUES (@ProjectId, @LoanId, @CovenantType, @CovenantDate, @Requirement, @ProjectedValue, @Notes)
+        VALUES (
+          @ProjectId, @LoanId, @CovenantType,
+          @DSCRTestDate, @ProjectedInterestRate, @DSCRRequirement, @ProjectedDSCR,
+          @OccupancyCovenantDate, @OccupancyRequirement, @ProjectedOccupancy,
+          @LiquidityRequirementLendingBank,
+          @CovenantDate, @Requirement, @ProjectedValue,
+          @Notes
+        )
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -1167,6 +1261,18 @@ export const updateCovenant = async (req: Request, res: Response, next: NextFunc
     const { id } = req.params;
     const covenantData = req.body;
 
+    // Validate CovenantType if provided
+    if (covenantData.CovenantType !== undefined) {
+      const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'];
+      if (!validTypes.includes(covenantData.CovenantType)) {
+        res.status(400).json({ 
+          success: false, 
+          error: { message: `CovenantType must be one of: ${validTypes.join(', ')}` } 
+        });
+        return;
+      }
+    }
+
     const pool = await getConnection();
     const request = pool.request().input('id', sql.Int, id);
 
@@ -1177,8 +1283,10 @@ export const updateCovenant = async (req: Request, res: Response, next: NextFunc
         fields.push(`${key} = @${key}`);
         if (key === 'ProjectId' || key === 'LoanId') {
           request.input(key, sql.Int, covenantData[key]);
-        } else if (key === 'CovenantDate') {
+        } else if (key === 'CovenantDate' || key === 'DSCRTestDate' || key === 'OccupancyCovenantDate') {
           request.input(key, sql.Date, covenantData[key]);
+        } else if (key === 'LiquidityRequirementLendingBank') {
+          request.input(key, sql.Decimal(18, 2), covenantData[key]);
         } else if (key === 'Notes') {
           request.input(key, sql.NVarChar(sql.MAX), covenantData[key]);
         } else {

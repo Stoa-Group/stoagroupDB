@@ -146,18 +146,33 @@ CREATE TABLE banking.DSCRTest (
 );
 
 -- ============================================================
--- BANKING: COVENANTS (Occupancy, Liquidity, etc.)
+-- BANKING: COVENANTS (DSCR, Occupancy, Liquidity Requirement, Other)
 -- ============================================================
 CREATE TABLE banking.Covenant (
     CovenantId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Covenant PRIMARY KEY,
     ProjectId  INT NOT NULL,
     LoanId     INT NULL,
     
-    CovenantType NVARCHAR(50) NOT NULL,  -- Occupancy, Liquidity, Other
+    CovenantType NVARCHAR(50) NOT NULL,  -- DSCR, Occupancy, Liquidity Requirement, Other
     
+    -- Fields for DSCR covenants
+    DSCRTestDate          DATE NULL,
+    ProjectedInterestRate NVARCHAR(50) NULL,
+    DSCRRequirement       NVARCHAR(100) NULL,
+    ProjectedDSCR         NVARCHAR(50) NULL,
+    
+    -- Fields for Occupancy covenants
+    OccupancyCovenantDate DATE NULL,
+    OccupancyRequirement  NVARCHAR(100) NULL,
+    ProjectedOccupancy    NVARCHAR(50) NULL,  -- Store as entered: "76.5%"
+    
+    -- Fields for Liquidity Requirement covenants
+    LiquidityRequirementLendingBank DECIMAL(18,2) NULL,
+    
+    -- Fields for Other covenants (legacy/general)
     CovenantDate    DATE NULL,
     Requirement    NVARCHAR(100) NULL,      -- Store as entered
-    ProjectedValue NVARCHAR(50) NULL,     -- For occupancy %, etc.
+    ProjectedValue NVARCHAR(50) NULL,     -- For general use
     
     Notes NVARCHAR(MAX) NULL,
     
