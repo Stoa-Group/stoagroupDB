@@ -571,7 +571,16 @@ export const deletePerson = async (req: Request, res: Response, next: NextFuncti
 export const getAllEquityPartners = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await getConnection();
-    const result = await pool.request().query('SELECT * FROM core.EquityPartner ORDER BY PartnerName');
+    const result = await pool.request().query(`
+      SELECT 
+        ep.*,
+        p.FullName AS InvestorRepName,
+        p.Email AS InvestorRepEmail,
+        p.Phone AS InvestorRepPhone
+      FROM core.EquityPartner ep
+      LEFT JOIN core.Person p ON ep.InvestorRepId = p.PersonId
+      ORDER BY ep.PartnerName
+    `);
     res.json({ success: true, data: result.recordset });
   } catch (error) {
     next(error);
@@ -584,7 +593,16 @@ export const getEquityPartnerById = async (req: Request, res: Response, next: Ne
     const pool = await getConnection();
     const result = await pool.request()
       .input('id', sql.Int, id)
-      .query('SELECT * FROM core.EquityPartner WHERE EquityPartnerId = @id');
+      .query(`
+        SELECT 
+          ep.*,
+          p.FullName AS InvestorRepName,
+          p.Email AS InvestorRepEmail,
+          p.Phone AS InvestorRepPhone
+        FROM core.EquityPartner ep
+        LEFT JOIN core.Person p ON ep.InvestorRepId = p.PersonId
+        WHERE ep.EquityPartnerId = @id
+      `);
     
     if (result.recordset.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Equity Partner not found' } });
@@ -603,7 +621,16 @@ export const getEquityPartnerByIMSId = async (req: Request, res: Response, next:
     const pool = await getConnection();
     const result = await pool.request()
       .input('imsId', sql.NVarChar, imsId)
-      .query('SELECT * FROM core.EquityPartner WHERE IMSInvestorProfileId = @imsId');
+      .query(`
+        SELECT 
+          ep.*,
+          p.FullName AS InvestorRepName,
+          p.Email AS InvestorRepEmail,
+          p.Phone AS InvestorRepPhone
+        FROM core.EquityPartner ep
+        LEFT JOIN core.Person p ON ep.InvestorRepId = p.PersonId
+        WHERE ep.IMSInvestorProfileId = @imsId
+      `);
     
     if (result.recordset.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Equity Partner with this IMS ID not found' } });
@@ -618,7 +645,7 @@ export const getEquityPartnerByIMSId = async (req: Request, res: Response, next:
 
 export const createEquityPartner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { PartnerName, Notes, IMSInvestorProfileId, PartnerType, InvestorRepName, InvestorRepEmail, InvestorRepPhone } = req.body;
+    const { PartnerName, Notes, IMSInvestorProfileId, PartnerType, InvestorRepId } = req.body;
 
     if (!PartnerName) {
       res.status(400).json({ success: false, error: { message: 'PartnerName is required' } });
@@ -635,32 +662,66 @@ export const createEquityPartner = async (req: Request, res: Response, next: Nex
     }
 
     const pool = await getConnection();
-    const result = await pool.request()
-      .input('PartnerName', sql.NVarChar(255), PartnerName)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes)
-      .input('IMSInvestorProfileId', sql.NVarChar(50), IMSInvestorProfileId)
-      .input('PartnerType', sql.NVarChar(20), PartnerType)
-      .input('InvestorRepName', sql.NVarChar(255), InvestorRepName)
-      .input('InvestorRepEmail', sql.NVarChar(255), InvestorRepEmail)
-      .input('InvestorRepPhone', sql.NVarChar(50), InvestorRepPhone)
-      .query(`
-        INSERT INTO core.EquityPartner (PartnerName, Notes, IMSInvestorProfileId, PartnerType, InvestorRepName, InvestorRepEmail, InvestorRepPhone)
-        OUTPUT INSERTED.*
-        VALUES (@PartnerName, @Notes, @IMSInvestorProfileId, @PartnerType, @InvestorRepName, @InvestorRepEmail, @InvestorRepPhone)
-      `);
-
-    res.status(201).json({ success: true, data: result.recordset[0] });
+    const transaction = new sql.Transaction(pool);
+    
+    try {
+      await transaction.begin();
+      
+      // Insert the equity partner
+      const result = await new sql.Request(transaction)
+        .input('PartnerName', sql.NVarChar(255), PartnerName)
+        .input('Notes', sql.NVarChar(sql.MAX), Notes)
+        .input('IMSInvestorProfileId', sql.NVarChar(50), IMSInvestorProfileId)
+        .input('PartnerType', sql.NVarChar(20), PartnerType)
+        .input('InvestorRepId', sql.Int, InvestorRepId)
+        .query(`
+          INSERT INTO core.EquityPartner (PartnerName, Notes, IMSInvestorProfileId, PartnerType, InvestorRepId)
+          OUTPUT INSERTED.*
+          VALUES (@PartnerName, @Notes, @IMSInvestorProfileId, @PartnerType, @InvestorRepId)
+        `);
+      
+      await transaction.commit();
+      
+      // Fetch with investor rep details
+      const finalResult = await pool.request()
+        .input('id', sql.Int, result.recordset[0].EquityPartnerId)
+        .query(`
+          SELECT 
+            ep.*,
+            p.FullName AS InvestorRepName,
+            p.Email AS InvestorRepEmail,
+            p.Phone AS InvestorRepPhone
+          FROM core.EquityPartner ep
+          LEFT JOIN core.Person p ON ep.InvestorRepId = p.PersonId
+          WHERE ep.EquityPartnerId = @id
+        `);
+      
+      const partner = finalResult.recordset[0];
+      res.status(201).json({ success: true, data: partner });
+    } catch (error: any) {
+      await transaction.rollback();
+      throw error;
+    }
   } catch (error: any) {
     if (error.number === 2627) {
       res.status(409).json({ success: false, error: { message: 'Equity Partner with this name already exists' } });
       return;
     }
-    if (error.number === 547 && error.message.includes('CK_EquityPartner_PartnerType')) {
-      res.status(400).json({ 
-        success: false, 
-        error: { message: 'PartnerType must be "Entity" or "Individual"' } 
-      });
-      return;
+    if (error.number === 547) {
+      if (error.message.includes('CK_EquityPartner_PartnerType')) {
+        res.status(400).json({ 
+          success: false, 
+          error: { message: 'PartnerType must be "Entity" or "Individual"' } 
+        });
+        return;
+      }
+      if (error.message.includes('FK_EquityPartner_InvestorRep')) {
+        res.status(400).json({ 
+          success: false, 
+          error: { message: 'Invalid InvestorRepId: Person does not exist' } 
+        });
+        return;
+      }
     }
     next(error);
   }
@@ -696,10 +757,8 @@ export const updateEquityPartner = async (req: Request, res: Response, next: Nex
           request.input(key, sql.NVarChar(50), partnerData[key]);
         } else if (key === 'PartnerType') {
           request.input(key, sql.NVarChar(20), partnerData[key]);
-        } else if (key === 'InvestorRepEmail' || key === 'InvestorRepName') {
-          request.input(key, sql.NVarChar(255), partnerData[key]);
-        } else if (key === 'InvestorRepPhone') {
-          request.input(key, sql.NVarChar(50), partnerData[key]);
+        } else if (key === 'InvestorRepId') {
+          request.input(key, sql.Int, partnerData[key]);
         } else {
           request.input(key, sql.NVarChar, partnerData[key]);
         }
@@ -715,7 +774,14 @@ export const updateEquityPartner = async (req: Request, res: Response, next: Nex
       UPDATE core.EquityPartner
       SET ${fields.join(', ')}
       WHERE EquityPartnerId = @id;
-      SELECT * FROM core.EquityPartner WHERE EquityPartnerId = @id;
+      SELECT 
+        ep.*,
+        p.FullName AS InvestorRepName,
+        p.Email AS InvestorRepEmail,
+        p.Phone AS InvestorRepPhone
+      FROM core.EquityPartner ep
+      LEFT JOIN core.Person p ON ep.InvestorRepId = p.PersonId
+      WHERE ep.EquityPartnerId = @id;
     `);
 
     if (result.recordset.length === 0) {
@@ -728,6 +794,15 @@ export const updateEquityPartner = async (req: Request, res: Response, next: Nex
     if (error.number === 2627) {
       res.status(409).json({ success: false, error: { message: 'Equity Partner with this name already exists' } });
       return;
+    }
+    if (error.number === 547) {
+      if (error.message.includes('FK_EquityPartner_InvestorRep')) {
+        res.status(400).json({ 
+          success: false, 
+          error: { message: 'Invalid InvestorRepId: Person does not exist' } 
+        });
+        return;
+      }
     }
     next(error);
   }

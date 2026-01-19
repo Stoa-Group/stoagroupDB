@@ -62,14 +62,13 @@ CREATE TABLE core.EquityPartner (
     
     PartnerType     NVARCHAR(20) NULL,  -- Entity or Individual
     
-    -- Investor Representative Contact Information
-    InvestorRepName  NVARCHAR(255) NULL,
-    InvestorRepEmail NVARCHAR(255) NULL,
-    InvestorRepPhone NVARCHAR(50) NULL,
+    -- Investor Representative Contact (references core.Person)
+    InvestorRepId   INT NULL,  -- FK to core.Person
     
     Notes           NVARCHAR(MAX) NULL,
     
-    CONSTRAINT CK_EquityPartner_PartnerType CHECK (PartnerType IS NULL OR PartnerType IN ('Entity', 'Individual'))
+    CONSTRAINT CK_EquityPartner_PartnerType CHECK (PartnerType IS NULL OR PartnerType IN ('Entity', 'Individual')),
+    CONSTRAINT FK_EquityPartner_InvestorRep FOREIGN KEY (InvestorRepId) REFERENCES core.Person(PersonId)
 );
 
 -- People (guarantors, contacts)

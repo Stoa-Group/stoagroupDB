@@ -240,7 +240,8 @@
 // EQUITY PARTNERS
 /**
  * Get all equity partners
- * @returns {Promise<object>} { success: true, data: [{ EquityPartnerId, PartnerName, InvestorRepName, InvestorRepEmail, InvestorRepPhone, IMSInvestorProfileId, Notes, ... }] }
+ * @returns {Promise<object>} { success: true, data: [{ EquityPartnerId, PartnerName, InvestorRepId, InvestorRepName, InvestorRepEmail, InvestorRepPhone, IMSInvestorProfileId, Notes, ... }] }
+ * @note InvestorRepName, InvestorRepEmail, InvestorRepPhone are populated from core.Person via InvestorRepId
  */
   async function getAllEquityPartners() {
   return apiRequest('/api/core/equity-partners');
@@ -266,24 +267,23 @@
 
 /**
  * Create a new equity partner (REQUIRES AUTHENTICATION)
- * @param {object} data - { PartnerName, PartnerType?, InvestorRepName?, InvestorRepEmail?, InvestorRepPhone?, IMSInvestorProfileId?, Notes? }
+ * @param {object} data - { PartnerName, PartnerType?, InvestorRepId?, IMSInvestorProfileId?, Notes? }
  * @param {string} [data.PartnerType] - 'Entity' or 'Individual' (e.g., 'Entity' for LLC/Corp, 'Individual' for person)
- * @returns {Promise<object>} { success: true, data: {...} }
+ * @param {number} [data.InvestorRepId] - PersonId from core.Person table (investor representative contact)
+ * @returns {Promise<object>} { success: true, data: { EquityPartnerId, PartnerName, InvestorRepId, InvestorRepName, InvestorRepEmail, InvestorRepPhone, ... } }
+ * @note InvestorRepName, InvestorRepEmail, InvestorRepPhone are populated from core.Person via InvestorRepId
  * @example
- * // Create an entity (company/LLC)
+ * // Create an entity (company/LLC) with investor rep
  * await createEquityPartner({
  *   PartnerName: 'ABC Capital LLC',
  *   PartnerType: 'Entity',
- *   InvestorRepName: 'John Doe',
- *   InvestorRepEmail: 'john@abccapital.com',
- *   InvestorRepPhone: '555-1234'
+ *   InvestorRepId: 5  // PersonId from core.Person table
  * });
  * 
- * // Create an individual
+ * // Create an individual without investor rep
  * await createEquityPartner({
  *   PartnerName: 'Jane Smith',
- *   PartnerType: 'Individual',
- *   InvestorRepEmail: 'jane@example.com'
+ *   PartnerType: 'Individual'
  * });
  */
   async function createEquityPartner(data) {
@@ -293,14 +293,15 @@
 /**
  * Update an equity partner (REQUIRES AUTHENTICATION)
  * @param {number} id - Equity Partner ID
- * @param {object} data - Fields to update { PartnerName?, PartnerType?, InvestorRepName?, InvestorRepEmail?, InvestorRepPhone?, IMSInvestorProfileId?, Notes? }
+ * @param {object} data - Fields to update { PartnerName?, PartnerType?, InvestorRepId?, IMSInvestorProfileId?, Notes? }
  * @param {string} [data.PartnerType] - 'Entity' or 'Individual'
- * @returns {Promise<object>} { success: true, data: {...} }
+ * @param {number} [data.InvestorRepId] - PersonId from core.Person table (investor representative contact)
+ * @returns {Promise<object>} { success: true, data: { EquityPartnerId, PartnerName, InvestorRepId, InvestorRepName, InvestorRepEmail, InvestorRepPhone, ... } }
+ * @note InvestorRepName, InvestorRepEmail, InvestorRepPhone are populated from core.Person via InvestorRepId
  * @example
  * await updateEquityPartner(123, {
  *   PartnerType: 'Entity',
- *   InvestorRepEmail: 'newemail@abccapital.com',
- *   InvestorRepPhone: '555-5678'
+ *   InvestorRepId: 7  // PersonId from core.Person table
  * });
  */
   async function updateEquityPartner(id, data) {
@@ -1098,7 +1099,8 @@
 /**
  * Get related parties for an equity commitment
  * @param {number} commitmentId - Equity Commitment ID
- * @returns {Promise<object>} { success: true, data: [{ EquityCommitmentRelatedPartyId, EquityCommitmentId, EquityPartnerId, PartnerName, InvestorRepName, InvestorRepEmail, InvestorRepPhone, ... }] }
+ * @returns {Promise<object>} { success: true, data: [{ EquityCommitmentRelatedPartyId, EquityCommitmentId, EquityPartnerId, PartnerName, InvestorRepId, InvestorRepName, InvestorRepEmail, InvestorRepPhone, ... }] }
+ * @note InvestorRepName, InvestorRepEmail, InvestorRepPhone are populated from core.Person via InvestorRepId
  */
   async function getRelatedPartiesByCommitment(commitmentId) {
   return apiRequest(`/api/banking/equity-commitments/${commitmentId}/related-parties`);

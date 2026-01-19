@@ -1686,9 +1686,9 @@ export const getAllEquityCommitments = async (req: Request, res: Response, next:
         p.ProjectName, 
         ep.PartnerName,
         ep.IMSInvestorProfileId,
-        ep.InvestorRepName,
-        ep.InvestorRepEmail,
-        ep.InvestorRepPhone,
+        p_rep.FullName AS InvestorRepName,
+        p_rep.Email AS InvestorRepEmail,
+        p_rep.Phone AS InvestorRepPhone,
         -- If PartnerName looks like an ID (all digits, 6+ chars), try to find actual name via IMS ID
         CASE 
           WHEN ep.PartnerName IS NOT NULL 
@@ -1707,17 +1707,19 @@ export const getAllEquityCommitments = async (req: Request, res: Response, next:
           SELECT 
             ep2.EquityPartnerId,
             ep2.PartnerName,
-            ep2.InvestorRepName,
-            ep2.InvestorRepEmail,
-            ep2.InvestorRepPhone
+            p2.FullName AS InvestorRepName,
+            p2.Email AS InvestorRepEmail,
+            p2.Phone AS InvestorRepPhone
           FROM banking.EquityCommitmentRelatedParty ecrp
           INNER JOIN core.EquityPartner ep2 ON ecrp.RelatedPartyId = ep2.EquityPartnerId
+          LEFT JOIN core.Person p2 ON ep2.InvestorRepId = p2.PersonId
           WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
           FOR JSON PATH
         ) AS RelatedParties
       FROM banking.EquityCommitment ec
       LEFT JOIN core.Project p ON ec.ProjectId = p.ProjectId
       LEFT JOIN core.EquityPartner ep ON ec.EquityPartnerId = ep.EquityPartnerId
+      LEFT JOIN core.Person p_rep ON ep.InvestorRepId = p_rep.PersonId
       ORDER BY ec.EquityCommitmentId
     `);
     
@@ -1747,23 +1749,25 @@ export const getEquityCommitmentById = async (req: Request, res: Response, next:
         SELECT 
           ec.*,
           ep.PartnerName,
-          ep.InvestorRepName,
-          ep.InvestorRepEmail,
-          ep.InvestorRepPhone,
+          p_rep.FullName AS InvestorRepName,
+          p_rep.Email AS InvestorRepEmail,
+          p_rep.Phone AS InvestorRepPhone,
           (
             SELECT 
               ep2.EquityPartnerId,
               ep2.PartnerName,
-              ep2.InvestorRepName,
-              ep2.InvestorRepEmail,
-              ep2.InvestorRepPhone
+              p2.FullName AS InvestorRepName,
+              p2.Email AS InvestorRepEmail,
+              p2.Phone AS InvestorRepPhone
             FROM banking.EquityCommitmentRelatedParty ecrp
             INNER JOIN core.EquityPartner ep2 ON ecrp.RelatedPartyId = ep2.EquityPartnerId
+            LEFT JOIN core.Person p2 ON ep2.InvestorRepId = p2.PersonId
             WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
             FOR JSON PATH
           ) AS RelatedParties
         FROM banking.EquityCommitment ec
         LEFT JOIN core.EquityPartner ep ON ec.EquityPartnerId = ep.EquityPartnerId
+        LEFT JOIN core.Person p_rep ON ep.InvestorRepId = p_rep.PersonId
         WHERE ec.EquityCommitmentId = @id
       `);
     
@@ -1795,23 +1799,25 @@ export const getEquityCommitmentsByProject = async (req: Request, res: Response,
         SELECT 
           ec.*,
           ep.PartnerName,
-          ep.InvestorRepName,
-          ep.InvestorRepEmail,
-          ep.InvestorRepPhone,
+          p_rep.FullName AS InvestorRepName,
+          p_rep.Email AS InvestorRepEmail,
+          p_rep.Phone AS InvestorRepPhone,
           (
             SELECT 
               ep2.EquityPartnerId,
               ep2.PartnerName,
-              ep2.InvestorRepName,
-              ep2.InvestorRepEmail,
-              ep2.InvestorRepPhone
+              p2.FullName AS InvestorRepName,
+              p2.Email AS InvestorRepEmail,
+              p2.Phone AS InvestorRepPhone
             FROM banking.EquityCommitmentRelatedParty ecrp
             INNER JOIN core.EquityPartner ep2 ON ecrp.RelatedPartyId = ep2.EquityPartnerId
+            LEFT JOIN core.Person p2 ON ep2.InvestorRepId = p2.PersonId
             WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
             FOR JSON PATH
           ) AS RelatedParties
         FROM banking.EquityCommitment ec
         LEFT JOIN core.EquityPartner ep ON ec.EquityPartnerId = ep.EquityPartnerId
+        LEFT JOIN core.Person p_rep ON ep.InvestorRepId = p_rep.PersonId
         WHERE ec.ProjectId = @projectId
         ORDER BY ec.EquityCommitmentId
       `);
@@ -1917,11 +1923,12 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
               SELECT 
                 ep.EquityPartnerId,
                 ep.PartnerName,
-                ep.InvestorRepName,
-                ep.InvestorRepEmail,
-                ep.InvestorRepPhone
+                p.FullName AS InvestorRepName,
+                p.Email AS InvestorRepEmail,
+                p.Phone AS InvestorRepPhone
               FROM banking.EquityCommitmentRelatedParty ecrp
               INNER JOIN core.EquityPartner ep ON ecrp.RelatedPartyId = ep.EquityPartnerId
+              LEFT JOIN core.Person p ON ep.InvestorRepId = p.PersonId
               WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
               FOR JSON PATH
             ) AS RelatedParties
@@ -2086,23 +2093,25 @@ export const updateEquityCommitment = async (req: Request, res: Response, next: 
           SELECT 
             ec.*,
             ep.PartnerName,
-            ep.InvestorRepName,
-            ep.InvestorRepEmail,
-            ep.InvestorRepPhone,
+            p_rep.FullName AS InvestorRepName,
+            p_rep.Email AS InvestorRepEmail,
+            p_rep.Phone AS InvestorRepPhone,
             (
               SELECT 
                 ep2.EquityPartnerId,
                 ep2.PartnerName,
-                ep2.InvestorRepName,
-                ep2.InvestorRepEmail,
-                ep2.InvestorRepPhone
+                p2.FullName AS InvestorRepName,
+                p2.Email AS InvestorRepEmail,
+                p2.Phone AS InvestorRepPhone
               FROM banking.EquityCommitmentRelatedParty ecrp
               INNER JOIN core.EquityPartner ep2 ON ecrp.RelatedPartyId = ep2.EquityPartnerId
+              LEFT JOIN core.Person p2 ON ep2.InvestorRepId = p2.PersonId
               WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
               FOR JSON PATH
             ) AS RelatedParties
           FROM banking.EquityCommitment ec
           LEFT JOIN core.EquityPartner ep ON ec.EquityPartnerId = ep.EquityPartnerId
+          LEFT JOIN core.Person p_rep ON ep.InvestorRepId = p_rep.PersonId
           WHERE ec.EquityCommitmentId = @id
         `);
 
@@ -2180,12 +2189,13 @@ export const getRelatedPartiesByCommitment = async (req: Request, res: Response,
           ecrp.EquityCommitmentId,
           ep.EquityPartnerId,
           ep.PartnerName,
-          ep.InvestorRepName,
-          ep.InvestorRepEmail,
-          ep.InvestorRepPhone,
+          p.FullName AS InvestorRepName,
+          p.Email AS InvestorRepEmail,
+          p.Phone AS InvestorRepPhone,
           ep.IMSInvestorProfileId
         FROM banking.EquityCommitmentRelatedParty ecrp
         INNER JOIN core.EquityPartner ep ON ecrp.RelatedPartyId = ep.EquityPartnerId
+        LEFT JOIN core.Person p ON ep.InvestorRepId = p.PersonId
         WHERE ecrp.EquityCommitmentId = @commitmentId
         ORDER BY ep.PartnerName
       `);
