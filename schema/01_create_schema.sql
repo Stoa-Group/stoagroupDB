@@ -58,6 +58,13 @@ CREATE TABLE core.Bank (
 CREATE TABLE core.EquityPartner (
     EquityPartnerId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_EquityPartner PRIMARY KEY,
     PartnerName     NVARCHAR(255) NOT NULL CONSTRAINT UQ_EquityPartner_Name UNIQUE,
+    IMSInvestorProfileId NVARCHAR(50) NULL,
+    
+    -- Investor Representative Contact Information
+    InvestorRepName  NVARCHAR(255) NULL,
+    InvestorRepEmail NVARCHAR(255) NULL,
+    InvestorRepPhone NVARCHAR(50) NULL,
+    
     Notes           NVARCHAR(MAX) NULL
 );
 
@@ -266,7 +273,7 @@ CREATE TABLE banking.BankTarget (
 CREATE TABLE banking.EquityCommitment (
     EquityCommitmentId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_EquityCommitment PRIMARY KEY,
     ProjectId          INT NOT NULL,
-    EquityPartnerId   INT NULL,
+    EquityPartnerId   INT NULL,  -- Lead investor
     
     EquityType         NVARCHAR(50) NULL,  -- Pref, Common
     LeadPrefGroup      NVARCHAR(255) NULL,
@@ -282,6 +289,22 @@ CREATE TABLE banking.EquityCommitment (
     CONSTRAINT FK_Equity_Project  FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
     CONSTRAINT FK_Equity_Partner FOREIGN KEY (EquityPartnerId) REFERENCES core.EquityPartner(EquityPartnerId)
 );
+
+-- Related Parties (investors involved but not the lead)
+CREATE TABLE banking.EquityCommitmentRelatedParty (
+    EquityCommitmentRelatedPartyId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_EquityCommitmentRelatedParty PRIMARY KEY,
+    EquityCommitmentId              INT NOT NULL,
+    RelatedPartyId                  INT NOT NULL,  -- FK to core.EquityPartner
+    
+    CreatedAt DATETIME2(0) NOT NULL DEFAULT SYSDATETIME(),
+    
+    CONSTRAINT FK_EquityCommitmentRelatedParty_Commitment FOREIGN KEY (EquityCommitmentId) REFERENCES banking.EquityCommitment(EquityCommitmentId) ON DELETE CASCADE,
+    CONSTRAINT FK_EquityCommitmentRelatedParty_Partner FOREIGN KEY (RelatedPartyId) REFERENCES core.EquityPartner(EquityPartnerId),
+    CONSTRAINT UQ_EquityCommitmentRelatedParty UNIQUE (EquityCommitmentId, RelatedPartyId)
+);
+
+CREATE INDEX IX_EquityCommitmentRelatedParty_EquityCommitmentId ON banking.EquityCommitmentRelatedParty(EquityCommitmentId);
+CREATE INDEX IX_EquityCommitmentRelatedParty_RelatedPartyId ON banking.EquityCommitmentRelatedParty(RelatedPartyId);
 
 -- ============================================================
 -- PIPELINE: UNDER CONTRACT (Land Development - Stoa Properties Tracker)

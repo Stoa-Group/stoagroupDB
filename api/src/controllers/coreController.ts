@@ -618,7 +618,7 @@ export const getEquityPartnerByIMSId = async (req: Request, res: Response, next:
 
 export const createEquityPartner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { PartnerName, Notes, IMSInvestorProfileId } = req.body;
+    const { PartnerName, Notes, IMSInvestorProfileId, InvestorRepName, InvestorRepEmail, InvestorRepPhone } = req.body;
 
     if (!PartnerName) {
       res.status(400).json({ success: false, error: { message: 'PartnerName is required' } });
@@ -630,10 +630,13 @@ export const createEquityPartner = async (req: Request, res: Response, next: Nex
       .input('PartnerName', sql.NVarChar(255), PartnerName)
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .input('IMSInvestorProfileId', sql.NVarChar(50), IMSInvestorProfileId)
+      .input('InvestorRepName', sql.NVarChar(255), InvestorRepName)
+      .input('InvestorRepEmail', sql.NVarChar(255), InvestorRepEmail)
+      .input('InvestorRepPhone', sql.NVarChar(50), InvestorRepPhone)
       .query(`
-        INSERT INTO core.EquityPartner (PartnerName, Notes, IMSInvestorProfileId)
+        INSERT INTO core.EquityPartner (PartnerName, Notes, IMSInvestorProfileId, InvestorRepName, InvestorRepEmail, InvestorRepPhone)
         OUTPUT INSERTED.*
-        VALUES (@PartnerName, @Notes, @IMSInvestorProfileId)
+        VALUES (@PartnerName, @Notes, @IMSInvestorProfileId, @InvestorRepName, @InvestorRepEmail, @InvestorRepPhone)
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -662,6 +665,10 @@ export const updateEquityPartner = async (req: Request, res: Response, next: Nex
         if (key === 'Notes') {
           request.input(key, sql.NVarChar(sql.MAX), partnerData[key]);
         } else if (key === 'IMSInvestorProfileId') {
+          request.input(key, sql.NVarChar(50), partnerData[key]);
+        } else if (key === 'InvestorRepEmail' || key === 'InvestorRepName') {
+          request.input(key, sql.NVarChar(255), partnerData[key]);
+        } else if (key === 'InvestorRepPhone') {
           request.input(key, sql.NVarChar(50), partnerData[key]);
         } else {
           request.input(key, sql.NVarChar, partnerData[key]);

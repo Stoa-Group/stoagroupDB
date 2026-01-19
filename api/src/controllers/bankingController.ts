@@ -1686,6 +1686,9 @@ export const getAllEquityCommitments = async (req: Request, res: Response, next:
         p.ProjectName, 
         ep.PartnerName,
         ep.IMSInvestorProfileId,
+        ep.InvestorRepName,
+        ep.InvestorRepEmail,
+        ep.InvestorRepPhone,
         -- If PartnerName looks like an ID (all digits, 6+ chars), try to find actual name via IMS ID
         CASE 
           WHEN ep.PartnerName IS NOT NULL 
@@ -1699,13 +1702,36 @@ export const getAllEquityCommitments = async (req: Request, res: Response, next:
             ep.PartnerName
           )
           ELSE ep.PartnerName
-        END AS InvestorName
+        END AS InvestorName,
+        (
+          SELECT 
+            ep2.EquityPartnerId,
+            ep2.PartnerName,
+            ep2.InvestorRepName,
+            ep2.InvestorRepEmail,
+            ep2.InvestorRepPhone
+          FROM banking.EquityCommitmentRelatedParty ecrp
+          INNER JOIN core.EquityPartner ep2 ON ecrp.RelatedPartyId = ep2.EquityPartnerId
+          WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
+          FOR JSON PATH
+        ) AS RelatedParties
       FROM banking.EquityCommitment ec
       LEFT JOIN core.Project p ON ec.ProjectId = p.ProjectId
       LEFT JOIN core.EquityPartner ep ON ec.EquityPartnerId = ep.EquityPartnerId
       ORDER BY ec.EquityCommitmentId
     `);
-    res.json({ success: true, data: result.recordset });
+    
+    // Parse RelatedParties JSON strings
+    const commitments = result.recordset.map((row: any) => {
+      if (row.RelatedParties) {
+        row.RelatedParties = JSON.parse(row.RelatedParties);
+      } else {
+        row.RelatedParties = [];
+      }
+      return row;
+    });
+    
+    res.json({ success: true, data: commitments });
   } catch (error) {
     next(error);
   }
@@ -1717,14 +1743,43 @@ export const getEquityCommitmentById = async (req: Request, res: Response, next:
     const pool = await getConnection();
     const result = await pool.request()
       .input('id', sql.Int, id)
-      .query('SELECT * FROM banking.EquityCommitment WHERE EquityCommitmentId = @id');
+      .query(`
+        SELECT 
+          ec.*,
+          ep.PartnerName,
+          ep.InvestorRepName,
+          ep.InvestorRepEmail,
+          ep.InvestorRepPhone,
+          (
+            SELECT 
+              ep2.EquityPartnerId,
+              ep2.PartnerName,
+              ep2.InvestorRepName,
+              ep2.InvestorRepEmail,
+              ep2.InvestorRepPhone
+            FROM banking.EquityCommitmentRelatedParty ecrp
+            INNER JOIN core.EquityPartner ep2 ON ecrp.RelatedPartyId = ep2.EquityPartnerId
+            WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
+            FOR JSON PATH
+          ) AS RelatedParties
+        FROM banking.EquityCommitment ec
+        LEFT JOIN core.EquityPartner ep ON ec.EquityPartnerId = ep.EquityPartnerId
+        WHERE ec.EquityCommitmentId = @id
+      `);
     
     if (result.recordset.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Equity Commitment not found' } });
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    const commitment = result.recordset[0];
+    if (commitment.RelatedParties) {
+      commitment.RelatedParties = JSON.parse(commitment.RelatedParties);
+    } else {
+      commitment.RelatedParties = [];
+    }
+    
+    res.json({ success: true, data: commitment });
   } catch (error) {
     next(error);
   }
@@ -1736,8 +1791,41 @@ export const getEquityCommitmentsByProject = async (req: Request, res: Response,
     const pool = await getConnection();
     const result = await pool.request()
       .input('projectId', sql.Int, projectId)
-      .query('SELECT * FROM banking.EquityCommitment WHERE ProjectId = @projectId ORDER BY EquityCommitmentId');
-    res.json({ success: true, data: result.recordset });
+      .query(`
+        SELECT 
+          ec.*,
+          ep.PartnerName,
+          ep.InvestorRepName,
+          ep.InvestorRepEmail,
+          ep.InvestorRepPhone,
+          (
+            SELECT 
+              ep2.EquityPartnerId,
+              ep2.PartnerName,
+              ep2.InvestorRepName,
+              ep2.InvestorRepEmail,
+              ep2.InvestorRepPhone
+            FROM banking.EquityCommitmentRelatedParty ecrp
+            INNER JOIN core.EquityPartner ep2 ON ecrp.RelatedPartyId = ep2.EquityPartnerId
+            WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
+            FOR JSON PATH
+          ) AS RelatedParties
+        FROM banking.EquityCommitment ec
+        LEFT JOIN core.EquityPartner ep ON ec.EquityPartnerId = ep.EquityPartnerId
+        WHERE ec.ProjectId = @projectId
+        ORDER BY ec.EquityCommitmentId
+      `);
+    
+    const commitments = result.recordset.map((row: any) => {
+      if (row.RelatedParties) {
+        row.RelatedParties = JSON.parse(row.RelatedParties);
+      } else {
+        row.RelatedParties = [];
+      }
+      return row;
+    });
+    
+    res.json({ success: true, data: commitments });
   } catch (error) {
     next(error);
   }
@@ -1748,7 +1836,7 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
     const {
       ProjectId, EquityPartnerId, EquityType, LeadPrefGroup,
       FundingDate, Amount, InterestRate, AnnualMonthly,
-      BackEndKicker, LastDollar, Notes
+      BackEndKicker, LastDollar, Notes, RelatedPartyIds
     } = req.body;
 
     if (!ProjectId) {
@@ -1757,33 +1845,91 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
     }
 
     const pool = await getConnection();
-    const result = await pool.request()
-      .input('ProjectId', sql.Int, ProjectId)
-      .input('EquityPartnerId', sql.Int, EquityPartnerId)
-      .input('EquityType', sql.NVarChar, EquityType)
-      .input('LeadPrefGroup', sql.NVarChar, LeadPrefGroup)
-      .input('FundingDate', sql.Date, FundingDate)
-      .input('Amount', sql.Decimal(18, 2), Amount)
-      .input('InterestRate', sql.NVarChar, InterestRate)
-      .input('AnnualMonthly', sql.NVarChar, AnnualMonthly)
-      .input('BackEndKicker', sql.NVarChar, BackEndKicker)
-      .input('LastDollar', sql.Bit, LastDollar)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes)
-      .query(`
-        INSERT INTO banking.EquityCommitment (
-          ProjectId, EquityPartnerId, EquityType, LeadPrefGroup,
-          FundingDate, Amount, InterestRate, AnnualMonthly,
-          BackEndKicker, LastDollar, Notes
-        )
-        OUTPUT INSERTED.*
-        VALUES (
-          @ProjectId, @EquityPartnerId, @EquityType, @LeadPrefGroup,
-          @FundingDate, @Amount, @InterestRate, @AnnualMonthly,
-          @BackEndKicker, @LastDollar, @Notes
-        )
-      `);
+    const transaction = new sql.Transaction(pool);
+    
+    try {
+      await transaction.begin();
+      
+      // Create the equity commitment
+      const commitmentResult = await new sql.Request(transaction)
+        .input('ProjectId', sql.Int, ProjectId)
+        .input('EquityPartnerId', sql.Int, EquityPartnerId)
+        .input('EquityType', sql.NVarChar, EquityType)
+        .input('LeadPrefGroup', sql.NVarChar, LeadPrefGroup)
+        .input('FundingDate', sql.Date, FundingDate)
+        .input('Amount', sql.Decimal(18, 2), Amount)
+        .input('InterestRate', sql.NVarChar, InterestRate)
+        .input('AnnualMonthly', sql.NVarChar, AnnualMonthly)
+        .input('BackEndKicker', sql.NVarChar, BackEndKicker)
+        .input('LastDollar', sql.Bit, LastDollar)
+        .input('Notes', sql.NVarChar(sql.MAX), Notes)
+        .query(`
+          INSERT INTO banking.EquityCommitment (
+            ProjectId, EquityPartnerId, EquityType, LeadPrefGroup,
+            FundingDate, Amount, InterestRate, AnnualMonthly,
+            BackEndKicker, LastDollar, Notes
+          )
+          OUTPUT INSERTED.*
+          VALUES (
+            @ProjectId, @EquityPartnerId, @EquityType, @LeadPrefGroup,
+            @FundingDate, @Amount, @InterestRate, @AnnualMonthly,
+            @BackEndKicker, @LastDollar, @Notes
+          )
+        `);
 
-    res.status(201).json({ success: true, data: result.recordset[0] });
+      const commitmentId = commitmentResult.recordset[0].EquityCommitmentId;
+
+      // Add related parties if provided
+      if (RelatedPartyIds && Array.isArray(RelatedPartyIds) && RelatedPartyIds.length > 0) {
+        for (const relatedPartyId of RelatedPartyIds) {
+          if (relatedPartyId && relatedPartyId !== EquityPartnerId) { // Don't add the lead investor as a related party
+            await new sql.Request(transaction)
+              .input('EquityCommitmentId', sql.Int, commitmentId)
+              .input('RelatedPartyId', sql.Int, relatedPartyId)
+              .query(`
+                INSERT INTO banking.EquityCommitmentRelatedParty (EquityCommitmentId, RelatedPartyId)
+                VALUES (@EquityCommitmentId, @RelatedPartyId)
+              `);
+          }
+        }
+      }
+
+      await transaction.commit();
+
+      // Fetch the complete commitment with related parties
+      const finalResult = await pool.request()
+        .input('id', sql.Int, commitmentId)
+        .query(`
+          SELECT 
+            ec.*,
+            (
+              SELECT 
+                ep.EquityPartnerId,
+                ep.PartnerName,
+                ep.InvestorRepName,
+                ep.InvestorRepEmail,
+                ep.InvestorRepPhone
+              FROM banking.EquityCommitmentRelatedParty ecrp
+              INNER JOIN core.EquityPartner ep ON ecrp.RelatedPartyId = ep.EquityPartnerId
+              WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
+              FOR JSON PATH
+            ) AS RelatedParties
+          FROM banking.EquityCommitment ec
+          WHERE ec.EquityCommitmentId = @id
+        `);
+
+      const commitment = finalResult.recordset[0];
+      if (commitment.RelatedParties) {
+        commitment.RelatedParties = JSON.parse(commitment.RelatedParties);
+      } else {
+        commitment.RelatedParties = [];
+      }
+
+      res.status(201).json({ success: true, data: commitment });
+    } catch (error: any) {
+      await transaction.rollback();
+      throw error;
+    }
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or EquityPartnerId' } });
@@ -1799,39 +1945,108 @@ export const updateEquityCommitment = async (req: Request, res: Response, next: 
     const {
       ProjectId, EquityPartnerId, EquityType, LeadPrefGroup,
       FundingDate, Amount, InterestRate, AnnualMonthly,
-      BackEndKicker, LastDollar, Notes
+      BackEndKicker, LastDollar, Notes, RelatedPartyIds
     } = req.body;
 
     const pool = await getConnection();
-    const result = await pool.request()
-      .input('id', sql.Int, id)
-      .input('ProjectId', sql.Int, ProjectId)
-      .input('EquityPartnerId', sql.Int, EquityPartnerId)
-      .input('EquityType', sql.NVarChar, EquityType)
-      .input('LeadPrefGroup', sql.NVarChar, LeadPrefGroup)
-      .input('FundingDate', sql.Date, FundingDate)
-      .input('Amount', sql.Decimal(18, 2), Amount)
-      .input('InterestRate', sql.NVarChar, InterestRate)
-      .input('AnnualMonthly', sql.NVarChar, AnnualMonthly)
-      .input('BackEndKicker', sql.NVarChar, BackEndKicker)
-      .input('LastDollar', sql.Bit, LastDollar)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes)
-      .query(`
-        UPDATE banking.EquityCommitment
-        SET ProjectId = @ProjectId, EquityPartnerId = @EquityPartnerId, EquityType = @EquityType,
-            LeadPrefGroup = @LeadPrefGroup, FundingDate = @FundingDate, Amount = @Amount,
-            InterestRate = @InterestRate, AnnualMonthly = @AnnualMonthly,
-            BackEndKicker = @BackEndKicker, LastDollar = @LastDollar, Notes = @Notes
-        OUTPUT INSERTED.*
-        WHERE EquityCommitmentId = @id
-      `);
+    const transaction = new sql.Transaction(pool);
+    
+    try {
+      await transaction.begin();
+      
+      // Update the equity commitment
+      const updateResult = await new sql.Request(transaction)
+        .input('id', sql.Int, id)
+        .input('ProjectId', sql.Int, ProjectId)
+        .input('EquityPartnerId', sql.Int, EquityPartnerId)
+        .input('EquityType', sql.NVarChar, EquityType)
+        .input('LeadPrefGroup', sql.NVarChar, LeadPrefGroup)
+        .input('FundingDate', sql.Date, FundingDate)
+        .input('Amount', sql.Decimal(18, 2), Amount)
+        .input('InterestRate', sql.NVarChar, InterestRate)
+        .input('AnnualMonthly', sql.NVarChar, AnnualMonthly)
+        .input('BackEndKicker', sql.NVarChar, BackEndKicker)
+        .input('LastDollar', sql.Bit, LastDollar)
+        .input('Notes', sql.NVarChar(sql.MAX), Notes)
+        .query(`
+          UPDATE banking.EquityCommitment
+          SET ProjectId = @ProjectId, EquityPartnerId = @EquityPartnerId, EquityType = @EquityType,
+              LeadPrefGroup = @LeadPrefGroup, FundingDate = @FundingDate, Amount = @Amount,
+              InterestRate = @InterestRate, AnnualMonthly = @AnnualMonthly,
+              BackEndKicker = @BackEndKicker, LastDollar = @LastDollar, Notes = @Notes
+          WHERE EquityCommitmentId = @id
+        `);
 
-    if (result.recordset.length === 0) {
-      res.status(404).json({ success: false, error: { message: 'Equity Commitment not found' } });
-      return;
+      if (updateResult.rowsAffected[0] === 0) {
+        await transaction.rollback();
+        res.status(404).json({ success: false, error: { message: 'Equity Commitment not found' } });
+        return;
+      }
+
+      // Update related parties if provided
+      if (RelatedPartyIds !== undefined) {
+        // Delete existing related parties
+        await new sql.Request(transaction)
+          .input('EquityCommitmentId', sql.Int, id)
+          .query('DELETE FROM banking.EquityCommitmentRelatedParty WHERE EquityCommitmentId = @EquityCommitmentId');
+
+        // Add new related parties
+        if (Array.isArray(RelatedPartyIds) && RelatedPartyIds.length > 0) {
+          for (const relatedPartyId of RelatedPartyIds) {
+            if (relatedPartyId && relatedPartyId !== EquityPartnerId) { // Don't add the lead investor as a related party
+              await new sql.Request(transaction)
+                .input('EquityCommitmentId', sql.Int, id)
+                .input('RelatedPartyId', sql.Int, relatedPartyId)
+                .query(`
+                  INSERT INTO banking.EquityCommitmentRelatedParty (EquityCommitmentId, RelatedPartyId)
+                  VALUES (@EquityCommitmentId, @RelatedPartyId)
+                `);
+            }
+          }
+        }
+      }
+
+      await transaction.commit();
+
+      // Fetch the complete commitment with related parties
+      const finalResult = await pool.request()
+        .input('id', sql.Int, id)
+        .query(`
+          SELECT 
+            ec.*,
+            ep.PartnerName,
+            ep.InvestorRepName,
+            ep.InvestorRepEmail,
+            ep.InvestorRepPhone,
+            (
+              SELECT 
+                ep2.EquityPartnerId,
+                ep2.PartnerName,
+                ep2.InvestorRepName,
+                ep2.InvestorRepEmail,
+                ep2.InvestorRepPhone
+              FROM banking.EquityCommitmentRelatedParty ecrp
+              INNER JOIN core.EquityPartner ep2 ON ecrp.RelatedPartyId = ep2.EquityPartnerId
+              WHERE ecrp.EquityCommitmentId = ec.EquityCommitmentId
+              FOR JSON PATH
+            ) AS RelatedParties
+          FROM banking.EquityCommitment ec
+          LEFT JOIN core.EquityPartner ep ON ec.EquityPartnerId = ep.EquityPartnerId
+          WHERE ec.EquityCommitmentId = @id
+        `);
+
+      const commitment = finalResult.recordset[0];
+      if (commitment.RelatedParties) {
+        commitment.RelatedParties = JSON.parse(commitment.RelatedParties);
+      } else {
+        commitment.RelatedParties = [];
+      }
+
+      res.json({ success: true, data: commitment });
+    } catch (error: any) {
+      await transaction.rollback();
+      throw error;
     }
-
-    res.json({ success: true, data: result.recordset[0] });
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid foreign key reference' } });
@@ -1855,6 +2070,112 @@ export const deleteEquityCommitment = async (req: Request, res: Response, next: 
     }
 
     res.json({ success: true, message: 'Equity Commitment deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================================
+// EQUITY COMMITMENT RELATED PARTIES CONTROLLER
+// ============================================================
+
+export const getRelatedPartiesByCommitment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { commitmentId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('commitmentId', sql.Int, commitmentId)
+      .query(`
+        SELECT 
+          ecrp.EquityCommitmentRelatedPartyId,
+          ecrp.EquityCommitmentId,
+          ep.EquityPartnerId,
+          ep.PartnerName,
+          ep.InvestorRepName,
+          ep.InvestorRepEmail,
+          ep.InvestorRepPhone,
+          ep.IMSInvestorProfileId
+        FROM banking.EquityCommitmentRelatedParty ecrp
+        INNER JOIN core.EquityPartner ep ON ecrp.RelatedPartyId = ep.EquityPartnerId
+        WHERE ecrp.EquityCommitmentId = @commitmentId
+        ORDER BY ep.PartnerName
+      `);
+    
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addRelatedParty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { commitmentId } = req.params;
+    const { RelatedPartyId } = req.body;
+
+    if (!RelatedPartyId) {
+      res.status(400).json({ success: false, error: { message: 'RelatedPartyId is required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    
+    // Check that the related party is not the lead investor
+    const commitmentCheck = await pool.request()
+      .input('commitmentId', sql.Int, commitmentId)
+      .query('SELECT EquityPartnerId FROM banking.EquityCommitment WHERE EquityCommitmentId = @commitmentId');
+    
+    if (commitmentCheck.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Equity Commitment not found' } });
+      return;
+    }
+    
+    const leadInvestorId = commitmentCheck.recordset[0].EquityPartnerId;
+    if (RelatedPartyId === leadInvestorId) {
+      res.status(400).json({ success: false, error: { message: 'Cannot add lead investor as a related party' } });
+      return;
+    }
+
+    const result = await pool.request()
+      .input('EquityCommitmentId', sql.Int, commitmentId)
+      .input('RelatedPartyId', sql.Int, RelatedPartyId)
+      .query(`
+        INSERT INTO banking.EquityCommitmentRelatedParty (EquityCommitmentId, RelatedPartyId)
+        OUTPUT INSERTED.*
+        VALUES (@EquityCommitmentId, @RelatedPartyId)
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 2627) {
+      res.status(409).json({ success: false, error: { message: 'This related party is already associated with this commitment' } });
+      return;
+    }
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid EquityCommitmentId or RelatedPartyId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const removeRelatedParty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { commitmentId, relatedPartyId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('commitmentId', sql.Int, commitmentId)
+      .input('relatedPartyId', sql.Int, relatedPartyId)
+      .query(`
+        DELETE FROM banking.EquityCommitmentRelatedParty
+        WHERE EquityCommitmentId = @commitmentId AND RelatedPartyId = @relatedPartyId
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      res.status(404).json({ success: false, error: { message: 'Related party not found for this commitment' } });
+      return;
+    }
+
+    res.json({ success: true, message: 'Related party removed successfully' });
   } catch (error) {
     next(error);
   }

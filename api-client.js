@@ -238,26 +238,68 @@
 }
 
 // EQUITY PARTNERS
+/**
+ * Get all equity partners
+ * @returns {Promise<object>} { success: true, data: [{ EquityPartnerId, PartnerName, InvestorRepName, InvestorRepEmail, InvestorRepPhone, IMSInvestorProfileId, Notes, ... }] }
+ */
   async function getAllEquityPartners() {
   return apiRequest('/api/core/equity-partners');
 }
 
+/**
+ * Get equity partner by ID
+ * @param {number} id - Equity Partner ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
   async function getEquityPartnerById(id) {
   return apiRequest(`/api/core/equity-partners/${id}`);
 }
 
+/**
+ * Get equity partner by IMS Investor Profile ID
+ * @param {string} imsId - IMS Investor Profile ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
   async function getEquityPartnerByIMSId(imsId) {
   return apiRequest(`/api/core/equity-partners/ims/${imsId}`);
 }
 
+/**
+ * Create a new equity partner (REQUIRES AUTHENTICATION)
+ * @param {object} data - { PartnerName, InvestorRepName?, InvestorRepEmail?, InvestorRepPhone?, IMSInvestorProfileId?, Notes? }
+ * @returns {Promise<object>} { success: true, data: {...} }
+ * @example
+ * await createEquityPartner({
+ *   PartnerName: 'ABC Capital',
+ *   InvestorRepName: 'John Doe',
+ *   InvestorRepEmail: 'john@abccapital.com',
+ *   InvestorRepPhone: '555-1234'
+ * });
+ */
   async function createEquityPartner(data) {
   return apiRequest('/api/core/equity-partners', 'POST', data);
 }
 
+/**
+ * Update an equity partner (REQUIRES AUTHENTICATION)
+ * @param {number} id - Equity Partner ID
+ * @param {object} data - Fields to update { PartnerName?, InvestorRepName?, InvestorRepEmail?, InvestorRepPhone?, IMSInvestorProfileId?, Notes? }
+ * @returns {Promise<object>} { success: true, data: {...} }
+ * @example
+ * await updateEquityPartner(123, {
+ *   InvestorRepEmail: 'newemail@abccapital.com',
+ *   InvestorRepPhone: '555-5678'
+ * });
+ */
   async function updateEquityPartner(id, data) {
   return apiRequest(`/api/core/equity-partners/${id}`, 'PUT', data);
 }
 
+/**
+ * Delete an equity partner (REQUIRES AUTHENTICATION)
+ * @param {number} id - Equity Partner ID
+ * @returns {Promise<object>} { success: true, message: '...' }
+ */
   async function deleteEquityPartner(id) {
   return apiRequest(`/api/core/equity-partners/${id}`, 'DELETE');
 }
@@ -966,6 +1008,13 @@
  * Get all equity commitments
  * @returns {Promise<object>} { success: true, data: [{...}] }
  */
+/**
+ * Get all equity commitments
+ * @returns {Promise<object>} { success: true, data: [{ EquityCommitmentId, ProjectId, EquityPartnerId, RelatedParties: [...], ... }] }
+ * @example
+ * const commitments = await getAllEquityCommitments();
+ * // Each commitment includes RelatedParties array with related investor info
+ */
   async function getAllEquityCommitments() {
   return apiRequest('/api/banking/equity-commitments');
 }
@@ -973,7 +1022,7 @@
 /**
  * Get equity commitment by ID
  * @param {number} id - Equity Commitment ID
- * @returns {Promise<object>} { success: true, data: {...} }
+ * @returns {Promise<object>} { success: true, data: { EquityCommitmentId, ProjectId, EquityPartnerId, RelatedParties: [...], ... } }
  */
   async function getEquityCommitmentById(id) {
   return apiRequest(`/api/banking/equity-commitments/${id}`);
@@ -982,7 +1031,7 @@
 /**
  * Get equity commitments by Project ID
  * @param {number} projectId - Project ID
- * @returns {Promise<object>} { success: true, data: [{...}] }
+ * @returns {Promise<object>} { success: true, data: [{ EquityCommitmentId, ProjectId, EquityPartnerId, RelatedParties: [...], ... }] }
  */
   async function getEquityCommitmentsByProject(projectId) {
   return apiRequest(`/api/banking/equity-commitments/project/${projectId}`);
@@ -990,8 +1039,16 @@
 
 /**
  * Create a new equity commitment (REQUIRES AUTHENTICATION)
- * @param {object} data - { ProjectId, EquityPartnerId?, EquityType?, LeadPrefGroup?, FundingDate?, Amount?, InterestRate?, AnnualMonthly?, BackEndKicker?, LastDollar?, Notes? }
- * @returns {Promise<object>} { success: true, data: {...} }
+ * @param {object} data - { ProjectId, EquityPartnerId?, EquityType?, LeadPrefGroup?, FundingDate?, Amount?, InterestRate?, AnnualMonthly?, BackEndKicker?, LastDollar?, Notes?, RelatedPartyIds?: number[] }
+ * @param {number[]} [data.RelatedPartyIds] - Array of EquityPartnerIds for related parties (investors involved but not the lead)
+ * @returns {Promise<object>} { success: true, data: { EquityCommitmentId, RelatedParties: [...], ... } }
+ * @example
+ * await createEquityCommitment({
+ *   ProjectId: 1,
+ *   EquityPartnerId: 5,  // Lead investor
+ *   Amount: 1000000,
+ *   RelatedPartyIds: [6, 7]  // Other investors also involved
+ * });
  */
   async function createEquityCommitment(data) {
   return apiRequest('/api/banking/equity-commitments', 'POST', data);
@@ -1000,8 +1057,14 @@
 /**
  * Update an equity commitment (REQUIRES AUTHENTICATION)
  * @param {number} id - Equity Commitment ID
- * @param {object} data - Updated equity commitment data
- * @returns {Promise<object>} { success: true, data: {...} }
+ * @param {object} data - Updated equity commitment data { ProjectId?, EquityPartnerId?, EquityType?, LeadPrefGroup?, FundingDate?, Amount?, InterestRate?, AnnualMonthly?, BackEndKicker?, LastDollar?, Notes?, RelatedPartyIds?: number[] }
+ * @param {number[]} [data.RelatedPartyIds] - Array of EquityPartnerIds for related parties (pass empty array to clear all)
+ * @returns {Promise<object>} { success: true, data: { EquityCommitmentId, RelatedParties: [...], ... } }
+ * @example
+ * await updateEquityCommitment(123, {
+ *   Amount: 1500000,
+ *   RelatedPartyIds: [6, 7, 8]  // Update related parties
+ * });
  */
   async function updateEquityCommitment(id, data) {
   return apiRequest(`/api/banking/equity-commitments/${id}`, 'PUT', data);
@@ -1014,6 +1077,39 @@
  */
   async function deleteEquityCommitment(id) {
   return apiRequest(`/api/banking/equity-commitments/${id}`, 'DELETE');
+}
+
+/**
+ * Get related parties for an equity commitment
+ * @param {number} commitmentId - Equity Commitment ID
+ * @returns {Promise<object>} { success: true, data: [{ EquityCommitmentRelatedPartyId, EquityCommitmentId, EquityPartnerId, PartnerName, InvestorRepName, InvestorRepEmail, InvestorRepPhone, ... }] }
+ */
+  async function getRelatedPartiesByCommitment(commitmentId) {
+  return apiRequest(`/api/banking/equity-commitments/${commitmentId}/related-parties`);
+}
+
+/**
+ * Add a related party to an equity commitment (REQUIRES AUTHENTICATION)
+ * @param {number} commitmentId - Equity Commitment ID
+ * @param {object} data - { RelatedPartyId }
+ * @returns {Promise<object>} { success: true, data: {...} }
+ * @example
+ * await addRelatedParty(123, { RelatedPartyId: 6 });
+ */
+  async function addRelatedParty(commitmentId, data) {
+  return apiRequest(`/api/banking/equity-commitments/${commitmentId}/related-parties`, 'POST', data);
+}
+
+/**
+ * Remove a related party from an equity commitment (REQUIRES AUTHENTICATION)
+ * @param {number} commitmentId - Equity Commitment ID
+ * @param {number} relatedPartyId - Related Party (EquityPartner) ID
+ * @returns {Promise<object>} { success: true, message: '...' }
+ * @example
+ * await removeRelatedParty(123, 6);
+ */
+  async function removeRelatedParty(commitmentId, relatedPartyId) {
+  return apiRequest(`/api/banking/equity-commitments/${commitmentId}/related-parties/${relatedPartyId}`, 'DELETE');
 }
 
 // LOAN PROCEEDS (Additional Draws/Disbursements)
@@ -1741,6 +1837,9 @@
   API.createEquityCommitment = createEquityCommitment;
   API.updateEquityCommitment = updateEquityCommitment;
   API.deleteEquityCommitment = deleteEquityCommitment;
+  API.getRelatedPartiesByCommitment = getRelatedPartiesByCommitment;
+  API.addRelatedParty = addRelatedParty;
+  API.removeRelatedParty = removeRelatedParty;
   
   // Banking - Loan Proceeds
   API.getAllLoanProceeds = getAllLoanProceeds;

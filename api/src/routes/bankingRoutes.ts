@@ -79,6 +79,11 @@ router.post('/equity-commitments', authenticate, bankingController.createEquityC
 router.put('/equity-commitments/:id', authenticate, bankingController.updateEquityCommitment);
 router.delete('/equity-commitments/:id', authenticate, bankingController.deleteEquityCommitment);
 
+// Equity Commitment Related Parties routes
+router.get('/equity-commitments/:commitmentId/related-parties', bankingController.getRelatedPartiesByCommitment);
+router.post('/equity-commitments/:commitmentId/related-parties', authenticate, bankingController.addRelatedParty);
+router.delete('/equity-commitments/:commitmentId/related-parties/:relatedPartyId', authenticate, bankingController.removeRelatedParty);
+
 // Loan Proceeds routes (Additional Draws/Disbursements)
 router.get('/loan-proceeds', bankingController.getAllLoanProceeds);
 router.get('/loan-proceeds/:id', bankingController.getLoanProceedsById);
