@@ -38,7 +38,8 @@
     "db:add-birth-order-to-project": "npx ts-node --transpile-only scripts/add-birth-order-to-project.ts",
     "db:seed-auth-users": "npx ts-node --transpile-only scripts/seed-auth-users.ts",
     "db:seed-participation-financing-type": "npx ts-node --transpile-only scripts/seed-participation-financing-type.ts",
-    "db:run-migration": "npx ts-node --transpile-only scripts/run-migration.ts"
+    "db:run-migration": "npx ts-node --transpile-only scripts/run-migration.ts",
+    "db:remove-duplicate-parent-holdings": "npx ts-node --transpile-only scripts/remove-duplicate-parent-holdings.ts"
   },
   "keywords": ["api", "rest", "azure-sql"],
   "author": "",
