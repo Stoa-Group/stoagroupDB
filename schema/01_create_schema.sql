@@ -279,7 +279,7 @@ CREATE TABLE banking.EquityCommitment (
     ProjectId          INT NOT NULL,
     EquityPartnerId   INT NULL,  -- Lead investor
     
-    EquityType         NVARCHAR(50) NULL,  -- Pref, Common
+    EquityType         NVARCHAR(50) NULL,  -- Preferred Equity, Common Equity, Profits Interest
     LeadPrefGroup      NVARCHAR(255) NULL,
     FundingDate        DATE NULL,
     Amount             DECIMAL(18,2) NULL,
@@ -291,7 +291,8 @@ CREATE TABLE banking.EquityCommitment (
     Notes NVARCHAR(MAX) NULL,
     
     CONSTRAINT FK_Equity_Project  FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
-    CONSTRAINT FK_Equity_Partner FOREIGN KEY (EquityPartnerId) REFERENCES core.EquityPartner(EquityPartnerId)
+    CONSTRAINT FK_Equity_Partner FOREIGN KEY (EquityPartnerId) REFERENCES core.EquityPartner(EquityPartnerId),
+    CONSTRAINT CK_EquityCommitment_EquityType CHECK (EquityType IS NULL OR EquityType IN ('Preferred Equity', 'Common Equity', 'Profits Interest'))
 );
 
 -- Related Parties (investors involved but not the lead)

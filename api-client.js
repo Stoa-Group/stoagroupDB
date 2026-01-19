@@ -1052,12 +1052,14 @@
 /**
  * Create a new equity commitment (REQUIRES AUTHENTICATION)
  * @param {object} data - { ProjectId, EquityPartnerId?, EquityType?, LeadPrefGroup?, FundingDate?, Amount?, InterestRate?, AnnualMonthly?, BackEndKicker?, LastDollar?, Notes?, RelatedPartyIds?: number[] }
+ * @param {string} [data.EquityType] - Type of equity: 'Preferred Equity', 'Common Equity', or 'Profits Interest'
  * @param {number[]} [data.RelatedPartyIds] - Array of EquityPartnerIds for related parties (investors involved but not the lead)
  * @returns {Promise<object>} { success: true, data: { EquityCommitmentId, RelatedParties: [...], ... } }
  * @example
  * await createEquityCommitment({
  *   ProjectId: 1,
  *   EquityPartnerId: 5,  // Lead investor
+ *   EquityType: 'Preferred Equity',  // or 'Common Equity' or 'Profits Interest'
  *   Amount: 1000000,
  *   RelatedPartyIds: [6, 7]  // Other investors also involved
  * });
@@ -1070,10 +1072,12 @@
  * Update an equity commitment (REQUIRES AUTHENTICATION)
  * @param {number} id - Equity Commitment ID
  * @param {object} data - Updated equity commitment data { ProjectId?, EquityPartnerId?, EquityType?, LeadPrefGroup?, FundingDate?, Amount?, InterestRate?, AnnualMonthly?, BackEndKicker?, LastDollar?, Notes?, RelatedPartyIds?: number[] }
+ * @param {string} [data.EquityType] - Type of equity: 'Preferred Equity', 'Common Equity', or 'Profits Interest'
  * @param {number[]} [data.RelatedPartyIds] - Array of EquityPartnerIds for related parties (pass empty array to clear all)
  * @returns {Promise<object>} { success: true, data: { EquityCommitmentId, RelatedParties: [...], ... } }
  * @example
  * await updateEquityCommitment(123, {
+ *   EquityType: 'Profits Interest',
  *   Amount: 1500000,
  *   RelatedPartyIds: [6, 7, 8]  // Update related parties
  * });

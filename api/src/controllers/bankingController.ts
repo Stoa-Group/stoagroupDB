@@ -1844,6 +1844,17 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
       return;
     }
 
+    // Validate EquityType if provided
+    if (EquityType && !['Preferred Equity', 'Common Equity', 'Profits Interest'].includes(EquityType)) {
+      res.status(400).json({ 
+        success: false, 
+        error: { 
+          message: 'EquityType must be one of: Preferred Equity, Common Equity, Profits Interest' 
+        } 
+      });
+      return;
+    }
+
     const pool = await getConnection();
     const transaction = new sql.Transaction(pool);
     
@@ -1932,6 +1943,15 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
     }
   } catch (error: any) {
     if (error.number === 547) {
+      if (error.message.includes('CK_EquityCommitment_EquityType')) {
+        res.status(400).json({ 
+          success: false, 
+          error: { 
+            message: 'EquityType must be one of: Preferred Equity, Common Equity, Profits Interest' 
+          } 
+        });
+        return;
+      }
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or EquityPartnerId' } });
       return;
     }
@@ -1948,34 +1968,85 @@ export const updateEquityCommitment = async (req: Request, res: Response, next: 
       BackEndKicker, LastDollar, Notes, RelatedPartyIds
     } = req.body;
 
+    // Validate EquityType if provided
+    if (EquityType && !['Preferred Equity', 'Common Equity', 'Profits Interest'].includes(EquityType)) {
+      res.status(400).json({ 
+        success: false, 
+        error: { 
+          message: 'EquityType must be one of: Preferred Equity, Common Equity, Profits Interest' 
+        } 
+      });
+      return;
+    }
+
     const pool = await getConnection();
     const transaction = new sql.Transaction(pool);
     
     try {
       await transaction.begin();
       
-      // Update the equity commitment
-      const updateResult = await new sql.Request(transaction)
-        .input('id', sql.Int, id)
-        .input('ProjectId', sql.Int, ProjectId)
-        .input('EquityPartnerId', sql.Int, EquityPartnerId)
-        .input('EquityType', sql.NVarChar, EquityType)
-        .input('LeadPrefGroup', sql.NVarChar, LeadPrefGroup)
-        .input('FundingDate', sql.Date, FundingDate)
-        .input('Amount', sql.Decimal(18, 2), Amount)
-        .input('InterestRate', sql.NVarChar, InterestRate)
-        .input('AnnualMonthly', sql.NVarChar, AnnualMonthly)
-        .input('BackEndKicker', sql.NVarChar, BackEndKicker)
-        .input('LastDollar', sql.Bit, LastDollar)
-        .input('Notes', sql.NVarChar(sql.MAX), Notes)
-        .query(`
-          UPDATE banking.EquityCommitment
-          SET ProjectId = @ProjectId, EquityPartnerId = @EquityPartnerId, EquityType = @EquityType,
-              LeadPrefGroup = @LeadPrefGroup, FundingDate = @FundingDate, Amount = @Amount,
-              InterestRate = @InterestRate, AnnualMonthly = @AnnualMonthly,
-              BackEndKicker = @BackEndKicker, LastDollar = @LastDollar, Notes = @Notes
-          WHERE EquityCommitmentId = @id
-        `);
+      // Build dynamic UPDATE query (only update fields that are provided)
+      const updateFields: string[] = [];
+      const request = new sql.Request(transaction).input('id', sql.Int, id);
+
+      if (ProjectId !== undefined) {
+        updateFields.push('ProjectId = @ProjectId');
+        request.input('ProjectId', sql.Int, ProjectId);
+      }
+      if (EquityPartnerId !== undefined) {
+        updateFields.push('EquityPartnerId = @EquityPartnerId');
+        request.input('EquityPartnerId', sql.Int, EquityPartnerId);
+      }
+      if (EquityType !== undefined) {
+        updateFields.push('EquityType = @EquityType');
+        request.input('EquityType', sql.NVarChar, EquityType);
+      }
+      if (LeadPrefGroup !== undefined) {
+        updateFields.push('LeadPrefGroup = @LeadPrefGroup');
+        request.input('LeadPrefGroup', sql.NVarChar, LeadPrefGroup);
+      }
+      if (FundingDate !== undefined) {
+        updateFields.push('FundingDate = @FundingDate');
+        request.input('FundingDate', sql.Date, FundingDate);
+      }
+      if (Amount !== undefined) {
+        updateFields.push('Amount = @Amount');
+        request.input('Amount', sql.Decimal(18, 2), Amount);
+      }
+      if (InterestRate !== undefined) {
+        updateFields.push('InterestRate = @InterestRate');
+        request.input('InterestRate', sql.NVarChar, InterestRate);
+      }
+      if (AnnualMonthly !== undefined) {
+        updateFields.push('AnnualMonthly = @AnnualMonthly');
+        request.input('AnnualMonthly', sql.NVarChar, AnnualMonthly);
+      }
+      if (BackEndKicker !== undefined) {
+        updateFields.push('BackEndKicker = @BackEndKicker');
+        request.input('BackEndKicker', sql.NVarChar, BackEndKicker);
+      }
+      if (LastDollar !== undefined) {
+        updateFields.push('LastDollar = @LastDollar');
+        request.input('LastDollar', sql.Bit, LastDollar);
+      }
+      if (Notes !== undefined) {
+        updateFields.push('Notes = @Notes');
+        request.input('Notes', sql.NVarChar(sql.MAX), Notes);
+      }
+
+      if (updateFields.length === 0) {
+        await transaction.rollback();
+        res.status(400).json({ success: false, error: { message: 'No fields provided to update' } });
+        return;
+      }
+
+      const updateQuery = `
+        UPDATE banking.EquityCommitment
+        SET ${updateFields.join(', ')}
+        WHERE EquityCommitmentId = @id
+      `;
+
+      const updateResult = await request.query(updateQuery);
 
       if (updateResult.rowsAffected[0] === 0) {
         await transaction.rollback();
@@ -2049,7 +2120,25 @@ export const updateEquityCommitment = async (req: Request, res: Response, next: 
     }
   } catch (error: any) {
     if (error.number === 547) {
-      res.status(400).json({ success: false, error: { message: 'Invalid foreign key reference' } });
+      if (error.message.includes('CK_EquityCommitment_EquityType')) {
+        res.status(400).json({ 
+          success: false, 
+          error: { 
+            message: 'EquityType must be one of: Preferred Equity, Common Equity, Profits Interest' 
+          } 
+        });
+        return;
+      }
+      // Provide more specific error messages for foreign key violations
+      let errorMessage = 'Invalid foreign key reference';
+      if (error.message.includes('FK_Equity_Project')) {
+        errorMessage = 'Invalid ProjectId: Project does not exist';
+      } else if (error.message.includes('FK_Equity_Partner')) {
+        errorMessage = 'Invalid EquityPartnerId: Equity Partner does not exist';
+      } else if (error.message.includes('FK_EquityCommitmentRelatedParty_Partner')) {
+        errorMessage = 'Invalid RelatedPartyId: One or more Related Party IDs do not exist';
+      }
+      res.status(400).json({ success: false, error: { message: errorMessage } });
       return;
     }
     next(error);
