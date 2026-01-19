@@ -60,12 +60,16 @@ CREATE TABLE core.EquityPartner (
     PartnerName     NVARCHAR(255) NOT NULL CONSTRAINT UQ_EquityPartner_Name UNIQUE,
     IMSInvestorProfileId NVARCHAR(50) NULL,
     
+    PartnerType     NVARCHAR(20) NULL,  -- Entity or Individual
+    
     -- Investor Representative Contact Information
     InvestorRepName  NVARCHAR(255) NULL,
     InvestorRepEmail NVARCHAR(255) NULL,
     InvestorRepPhone NVARCHAR(50) NULL,
     
-    Notes           NVARCHAR(MAX) NULL
+    Notes           NVARCHAR(MAX) NULL,
+    
+    CONSTRAINT CK_EquityPartner_PartnerType CHECK (PartnerType IS NULL OR PartnerType IN ('Entity', 'Individual'))
 );
 
 -- People (guarantors, contacts)

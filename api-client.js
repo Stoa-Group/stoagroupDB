@@ -266,14 +266,24 @@
 
 /**
  * Create a new equity partner (REQUIRES AUTHENTICATION)
- * @param {object} data - { PartnerName, InvestorRepName?, InvestorRepEmail?, InvestorRepPhone?, IMSInvestorProfileId?, Notes? }
+ * @param {object} data - { PartnerName, PartnerType?, InvestorRepName?, InvestorRepEmail?, InvestorRepPhone?, IMSInvestorProfileId?, Notes? }
+ * @param {string} [data.PartnerType] - 'Entity' or 'Individual' (e.g., 'Entity' for LLC/Corp, 'Individual' for person)
  * @returns {Promise<object>} { success: true, data: {...} }
  * @example
+ * // Create an entity (company/LLC)
  * await createEquityPartner({
- *   PartnerName: 'ABC Capital',
+ *   PartnerName: 'ABC Capital LLC',
+ *   PartnerType: 'Entity',
  *   InvestorRepName: 'John Doe',
  *   InvestorRepEmail: 'john@abccapital.com',
  *   InvestorRepPhone: '555-1234'
+ * });
+ * 
+ * // Create an individual
+ * await createEquityPartner({
+ *   PartnerName: 'Jane Smith',
+ *   PartnerType: 'Individual',
+ *   InvestorRepEmail: 'jane@example.com'
  * });
  */
   async function createEquityPartner(data) {
@@ -283,10 +293,12 @@
 /**
  * Update an equity partner (REQUIRES AUTHENTICATION)
  * @param {number} id - Equity Partner ID
- * @param {object} data - Fields to update { PartnerName?, InvestorRepName?, InvestorRepEmail?, InvestorRepPhone?, IMSInvestorProfileId?, Notes? }
+ * @param {object} data - Fields to update { PartnerName?, PartnerType?, InvestorRepName?, InvestorRepEmail?, InvestorRepPhone?, IMSInvestorProfileId?, Notes? }
+ * @param {string} [data.PartnerType] - 'Entity' or 'Individual'
  * @returns {Promise<object>} { success: true, data: {...} }
  * @example
  * await updateEquityPartner(123, {
+ *   PartnerType: 'Entity',
  *   InvestorRepEmail: 'newemail@abccapital.com',
  *   InvestorRepPhone: '555-5678'
  * });

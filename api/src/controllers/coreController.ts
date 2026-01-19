@@ -618,10 +618,19 @@ export const getEquityPartnerByIMSId = async (req: Request, res: Response, next:
 
 export const createEquityPartner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { PartnerName, Notes, IMSInvestorProfileId, InvestorRepName, InvestorRepEmail, InvestorRepPhone } = req.body;
+    const { PartnerName, Notes, IMSInvestorProfileId, PartnerType, InvestorRepName, InvestorRepEmail, InvestorRepPhone } = req.body;
 
     if (!PartnerName) {
       res.status(400).json({ success: false, error: { message: 'PartnerName is required' } });
+      return;
+    }
+
+    // Validate PartnerType if provided
+    if (PartnerType && PartnerType !== 'Entity' && PartnerType !== 'Individual') {
+      res.status(400).json({ 
+        success: false, 
+        error: { message: 'PartnerType must be "Entity" or "Individual"' } 
+      });
       return;
     }
 
@@ -630,19 +639,27 @@ export const createEquityPartner = async (req: Request, res: Response, next: Nex
       .input('PartnerName', sql.NVarChar(255), PartnerName)
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .input('IMSInvestorProfileId', sql.NVarChar(50), IMSInvestorProfileId)
+      .input('PartnerType', sql.NVarChar(20), PartnerType)
       .input('InvestorRepName', sql.NVarChar(255), InvestorRepName)
       .input('InvestorRepEmail', sql.NVarChar(255), InvestorRepEmail)
       .input('InvestorRepPhone', sql.NVarChar(50), InvestorRepPhone)
       .query(`
-        INSERT INTO core.EquityPartner (PartnerName, Notes, IMSInvestorProfileId, InvestorRepName, InvestorRepEmail, InvestorRepPhone)
+        INSERT INTO core.EquityPartner (PartnerName, Notes, IMSInvestorProfileId, PartnerType, InvestorRepName, InvestorRepEmail, InvestorRepPhone)
         OUTPUT INSERTED.*
-        VALUES (@PartnerName, @Notes, @IMSInvestorProfileId, @InvestorRepName, @InvestorRepEmail, @InvestorRepPhone)
+        VALUES (@PartnerName, @Notes, @IMSInvestorProfileId, @PartnerType, @InvestorRepName, @InvestorRepEmail, @InvestorRepPhone)
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
   } catch (error: any) {
     if (error.number === 2627) {
       res.status(409).json({ success: false, error: { message: 'Equity Partner with this name already exists' } });
+      return;
+    }
+    if (error.number === 547 && error.message.includes('CK_EquityPartner_PartnerType')) {
+      res.status(400).json({ 
+        success: false, 
+        error: { message: 'PartnerType must be "Entity" or "Individual"' } 
+      });
       return;
     }
     next(error);
@@ -657,6 +674,17 @@ export const updateEquityPartner = async (req: Request, res: Response, next: Nex
     const pool = await getConnection();
     const request = pool.request().input('id', sql.Int, id);
 
+    // Validate PartnerType if provided
+    if (partnerData.PartnerType && 
+        partnerData.PartnerType !== 'Entity' && 
+        partnerData.PartnerType !== 'Individual') {
+      res.status(400).json({ 
+        success: false, 
+        error: { message: 'PartnerType must be "Entity" or "Individual"' } 
+      });
+      return;
+    }
+
     // Build dynamic update query - only update fields that are provided
     const fields: string[] = [];
     Object.keys(partnerData).forEach((key) => {
@@ -666,6 +694,8 @@ export const updateEquityPartner = async (req: Request, res: Response, next: Nex
           request.input(key, sql.NVarChar(sql.MAX), partnerData[key]);
         } else if (key === 'IMSInvestorProfileId') {
           request.input(key, sql.NVarChar(50), partnerData[key]);
+        } else if (key === 'PartnerType') {
+          request.input(key, sql.NVarChar(20), partnerData[key]);
         } else if (key === 'InvestorRepEmail' || key === 'InvestorRepName') {
           request.input(key, sql.NVarChar(255), partnerData[key]);
         } else if (key === 'InvestorRepPhone') {
