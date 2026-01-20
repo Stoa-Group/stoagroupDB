@@ -1,6 +1,6 @@
 -- ============================================================
 -- ADD CHECK CONSTRAINT FOR EquityType IN banking.EquityCommitment
--- Allows: 'Preferred Equity', 'Common Equity', 'Profits Interest'
+-- Allows: 'Preferred Equity', 'Common Equity', 'Profits Interest', 'Stoa Loan'
 -- ============================================================
 
 SET NOCOUNT ON;
@@ -62,13 +62,13 @@ BEGIN TRY
     PRINT '3. Adding CHECK constraint CK_EquityCommitment_EquityType...';
     ALTER TABLE banking.EquityCommitment
     ADD CONSTRAINT CK_EquityCommitment_EquityType 
-    CHECK (EquityType IS NULL OR EquityType IN ('Preferred Equity', 'Common Equity', 'Profits Interest'));
+    CHECK (EquityType IS NULL OR EquityType IN ('Preferred Equity', 'Common Equity', 'Profits Interest', 'Stoa Loan'));
     PRINT '   ✓ Constraint added successfully';
     PRINT '';
 
     PRINT '============================================================';
     PRINT 'EquityType constraint added successfully!';
-    PRINT 'Allowed values: Preferred Equity, Common Equity, Profits Interest';
+    PRINT 'Allowed values: Preferred Equity, Common Equity, Profits Interest, Stoa Loan';
     PRINT '============================================================';
     PRINT '';
 

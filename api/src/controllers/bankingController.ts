@@ -2056,11 +2056,11 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
     }
 
     // Validate EquityType if provided
-    if (EquityType && !['Preferred Equity', 'Common Equity', 'Profits Interest'].includes(EquityType)) {
+    if (EquityType && !['Preferred Equity', 'Common Equity', 'Profits Interest', 'Stoa Loan'].includes(EquityType)) {
       res.status(400).json({ 
         success: false, 
         error: { 
-          message: 'EquityType must be one of: Preferred Equity, Common Equity, Profits Interest' 
+          message: 'EquityType must be one of: Preferred Equity, Common Equity, Profits Interest, Stoa Loan' 
         } 
       });
       return;
@@ -2181,11 +2181,11 @@ export const updateEquityCommitment = async (req: Request, res: Response, next: 
     } = req.body;
 
     // Validate EquityType if provided
-    if (EquityType && !['Preferred Equity', 'Common Equity', 'Profits Interest'].includes(EquityType)) {
+    if (EquityType && !['Preferred Equity', 'Common Equity', 'Profits Interest', 'Stoa Loan'].includes(EquityType)) {
       res.status(400).json({ 
         success: false, 
         error: { 
-          message: 'EquityType must be one of: Preferred Equity, Common Equity, Profits Interest' 
+          message: 'EquityType must be one of: Preferred Equity, Common Equity, Profits Interest, Stoa Loan' 
         } 
       });
       return;
