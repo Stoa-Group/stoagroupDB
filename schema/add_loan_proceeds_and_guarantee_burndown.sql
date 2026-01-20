@@ -22,6 +22,7 @@ BEGIN
         ProjectId       INT NOT NULL,
         LoanId          INT NULL,  -- Optional: tie to specific loan
         
+        FinancingType NVARCHAR(30) NULL,  -- Construction or Permanent
         -- Proceeds details
         ProceedsDate    DATE NOT NULL,           -- Date of draw/disbursement
         ProceedsAmount  DECIMAL(18,2) NOT NULL,  -- Amount drawn/disbursed
@@ -37,7 +38,8 @@ BEGIN
         UpdatedAt       DATETIME2(0) NULL,
         
         CONSTRAINT FK_LoanProceeds_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
-        CONSTRAINT FK_LoanProceeds_Loan    FOREIGN KEY (LoanId) REFERENCES banking.Loan(LoanId)
+        CONSTRAINT FK_LoanProceeds_Loan    FOREIGN KEY (LoanId) REFERENCES banking.Loan(LoanId),
+        CONSTRAINT CK_LoanProceeds_FinancingType CHECK (FinancingType IS NULL OR FinancingType IN ('Construction', 'Permanent'))
     );
     
     CREATE INDEX IX_LoanProceeds_Project ON banking.LoanProceeds(ProjectId);
@@ -66,6 +68,7 @@ BEGIN
         LoanId              INT NULL,  -- Optional: tie to specific loan
         PersonId            INT NOT NULL,  -- Guarantor
         
+        FinancingType NVARCHAR(30) NULL,  -- Construction or Permanent
         -- Burndown details
         BurndownDate       DATE NOT NULL,           -- Date of guarantee reduction
         PreviousAmount     DECIMAL(18,2) NULL,      -- Guarantee amount before reduction
@@ -87,7 +90,8 @@ BEGIN
         
         CONSTRAINT FK_GuaranteeBurndown_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
         CONSTRAINT FK_GuaranteeBurndown_Loan    FOREIGN KEY (LoanId) REFERENCES banking.Loan(LoanId),
-        CONSTRAINT FK_GuaranteeBurndown_Person  FOREIGN KEY (PersonId) REFERENCES core.Person(PersonId)
+        CONSTRAINT FK_GuaranteeBurndown_Person  FOREIGN KEY (PersonId) REFERENCES core.Person(PersonId),
+        CONSTRAINT CK_GuaranteeBurndown_FinancingType CHECK (FinancingType IS NULL OR FinancingType IN ('Construction', 'Permanent'))
     );
     
     CREATE INDEX IX_GuaranteeBurndown_Project ON banking.GuaranteeBurndown(ProjectId);

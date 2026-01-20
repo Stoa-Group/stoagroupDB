@@ -520,26 +520,48 @@ export const getDSCRTestsByProject = async (req: Request, res: Response, next: N
 
 export const createDSCRTest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue } = req.body;
+    const { ProjectId, LoanId, FinancingType, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue } = req.body;
 
     if (!ProjectId || !TestNumber) {
       res.status(400).json({ success: false, error: { message: 'ProjectId and TestNumber are required' } });
       return;
     }
 
+    // Validate FinancingType
+    if (FinancingType && FinancingType !== 'Construction' && FinancingType !== 'Permanent') {
+      res.status(400).json({ success: false, error: { message: 'FinancingType must be "Construction" or "Permanent"' } });
+      return;
+    }
+
+    // Default to Construction if not provided
+    const finalFinancingType = FinancingType || 'Construction';
+
     const pool = await getConnection();
-    const result = await pool.request()
+    const request = pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('LoanId', sql.Int, LoanId)
+      .input('FinancingType', sql.NVarChar, finalFinancingType)
       .input('TestNumber', sql.Int, TestNumber)
       .input('TestDate', sql.Date, TestDate)
       .input('ProjectedInterestRate', sql.NVarChar, ProjectedInterestRate)
       .input('Requirement', sql.Decimal(10, 2), Requirement)
-      .input('ProjectedValue', sql.NVarChar, ProjectedValue)
+      .input('ProjectedValue', sql.NVarChar, ProjectedValue);
+
+    // Insert without OUTPUT clause (triggers prevent OUTPUT INSERTED.*)
+    await request.query(`
+      INSERT INTO banking.DSCRTest (ProjectId, LoanId, FinancingType, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue)
+      VALUES (@ProjectId, @LoanId, @FinancingType, @TestNumber, @TestDate, @ProjectedInterestRate, @Requirement, @ProjectedValue)
+    `);
+
+    // Get the inserted record
+    const result = await pool.request()
+      .input('projectId', sql.Int, ProjectId)
+      .input('testNumber', sql.Int, TestNumber)
+      .input('financingType', sql.NVarChar, finalFinancingType)
       .query(`
-        INSERT INTO banking.DSCRTest (ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue)
-        OUTPUT INSERTED.*
-        VALUES (@ProjectId, @LoanId, @TestNumber, @TestDate, @ProjectedInterestRate, @Requirement, @ProjectedValue)
+        SELECT TOP 1 * FROM banking.DSCRTest 
+        WHERE ProjectId = @projectId AND TestNumber = @testNumber AND FinancingType = @financingType
+        ORDER BY DSCRTestId DESC
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -559,26 +581,49 @@ export const createDSCRTest = async (req: Request, res: Response, next: NextFunc
 export const updateDSCRTest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const { ProjectId, LoanId, TestNumber, TestDate, ProjectedInterestRate, Requirement, ProjectedValue } = req.body;
+    const updateData = req.body;
+
+    // Validate FinancingType if provided
+    if (updateData.FinancingType && updateData.FinancingType !== 'Construction' && updateData.FinancingType !== 'Permanent') {
+      res.status(400).json({ success: false, error: { message: 'FinancingType must be "Construction" or "Permanent"' } });
+      return;
+    }
 
     const pool = await getConnection();
+    const request = pool.request().input('id', sql.Int, id);
+
+    // Build dynamic update query
+    const fields: string[] = [];
+    Object.keys(updateData).forEach((key) => {
+      if (key !== 'DSCRTestId' && updateData[key] !== undefined) {
+        fields.push(`${key} = @${key}`);
+        if (key === 'ProjectId' || key === 'LoanId' || key === 'TestNumber') {
+          request.input(key, sql.Int, updateData[key]);
+        } else if (key === 'Requirement') {
+          request.input(key, sql.Decimal(10, 2), updateData[key]);
+        } else if (key === 'TestDate') {
+          request.input(key, sql.Date, updateData[key]);
+        } else {
+          request.input(key, sql.NVarChar, updateData[key]);
+        }
+      }
+    });
+
+    if (fields.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'No fields to update' } });
+      return;
+    }
+
+    await request.query(`
+      UPDATE banking.DSCRTest
+      SET ${fields.join(', ')}
+      WHERE DSCRTestId = @id
+    `);
+
+    // Get updated record
     const result = await pool.request()
       .input('id', sql.Int, id)
-      .input('ProjectId', sql.Int, ProjectId)
-      .input('LoanId', sql.Int, LoanId)
-      .input('TestNumber', sql.Int, TestNumber)
-      .input('TestDate', sql.Date, TestDate)
-      .input('ProjectedInterestRate', sql.NVarChar, ProjectedInterestRate)
-      .input('Requirement', sql.Decimal(10, 2), Requirement)
-      .input('ProjectedValue', sql.NVarChar, ProjectedValue)
-      .query(`
-        UPDATE banking.DSCRTest
-        SET ProjectId = @ProjectId, LoanId = @LoanId, TestNumber = @TestNumber,
-            TestDate = @TestDate, ProjectedInterestRate = @ProjectedInterestRate,
-            Requirement = @Requirement, ProjectedValue = @ProjectedValue
-        OUTPUT INSERTED.*
-        WHERE DSCRTestId = @id
-      `);
+      .query('SELECT * FROM banking.DSCRTest WHERE DSCRTestId = @id');
 
     if (result.recordset.length === 0) {
       res.status(404).json({ success: false, error: { message: 'DSCR Test not found' } });
@@ -1021,25 +1066,47 @@ export const getGuaranteesByProject = async (req: Request, res: Response, next: 
 
 export const createGuarantee = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { ProjectId, LoanId, PersonId, GuaranteePercent, GuaranteeAmount, Notes } = req.body;
+    const { ProjectId, LoanId, FinancingType, PersonId, GuaranteePercent, GuaranteeAmount, Notes } = req.body;
 
     if (!ProjectId || !PersonId) {
       res.status(400).json({ success: false, error: { message: 'ProjectId and PersonId are required' } });
       return;
     }
 
+    // Validate FinancingType
+    if (FinancingType && FinancingType !== 'Construction' && FinancingType !== 'Permanent') {
+      res.status(400).json({ success: false, error: { message: 'FinancingType must be "Construction" or "Permanent"' } });
+      return;
+    }
+
+    // Default to Construction if not provided
+    const finalFinancingType = FinancingType || 'Construction';
+
     const pool = await getConnection();
-    const result = await pool.request()
+    const request = pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('LoanId', sql.Int, LoanId)
+      .input('FinancingType', sql.NVarChar, finalFinancingType)
       .input('PersonId', sql.Int, PersonId)
       .input('GuaranteePercent', sql.Decimal(10, 4), GuaranteePercent)
       .input('GuaranteeAmount', sql.Decimal(18, 2), GuaranteeAmount)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes);
+
+    // Insert without OUTPUT clause (triggers prevent OUTPUT INSERTED.*)
+    await request.query(`
+      INSERT INTO banking.Guarantee (ProjectId, LoanId, FinancingType, PersonId, GuaranteePercent, GuaranteeAmount, Notes)
+      VALUES (@ProjectId, @LoanId, @FinancingType, @PersonId, @GuaranteePercent, @GuaranteeAmount, @Notes)
+    `);
+
+    // Get the inserted record
+    const result = await pool.request()
+      .input('projectId', sql.Int, ProjectId)
+      .input('personId', sql.Int, PersonId)
+      .input('financingType', sql.NVarChar, finalFinancingType)
       .query(`
-        INSERT INTO banking.Guarantee (ProjectId, LoanId, PersonId, GuaranteePercent, GuaranteeAmount, Notes)
-        OUTPUT INSERTED.*
-        VALUES (@ProjectId, @LoanId, @PersonId, @GuaranteePercent, @GuaranteeAmount, @Notes)
+        SELECT TOP 1 * FROM banking.Guarantee 
+        WHERE ProjectId = @projectId AND PersonId = @personId AND FinancingType = @financingType
+        ORDER BY GuaranteeId DESC
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -1231,7 +1298,7 @@ export const getCovenantsByProject = async (req: Request, res: Response, next: N
 export const createCovenant = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { 
-      ProjectId, LoanId, CovenantType,
+      ProjectId, LoanId, FinancingType, CovenantType,
       // DSCR fields
       DSCRTestDate, ProjectedInterestRate, DSCRRequirement, ProjectedDSCR,
       // Occupancy fields
@@ -1258,10 +1325,20 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
       return;
     }
 
+    // Validate FinancingType
+    if (FinancingType && FinancingType !== 'Construction' && FinancingType !== 'Permanent') {
+      res.status(400).json({ success: false, error: { message: 'FinancingType must be "Construction" or "Permanent"' } });
+      return;
+    }
+
+    // Default to Construction if not provided
+    const finalFinancingType = FinancingType || 'Construction';
+
     const pool = await getConnection();
-    const result = await pool.request()
+    const request = pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('LoanId', sql.Int, LoanId)
+      .input('FinancingType', sql.NVarChar, finalFinancingType)
       .input('CovenantType', sql.NVarChar, CovenantType)
       // DSCR fields
       .input('DSCRTestDate', sql.Date, DSCRTestDate)
@@ -1278,25 +1355,36 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
       .input('CovenantDate', sql.Date, CovenantDate)
       .input('Requirement', sql.NVarChar, Requirement)
       .input('ProjectedValue', sql.NVarChar, ProjectedValue)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes);
+
+    // Insert without OUTPUT clause (triggers prevent OUTPUT INSERTED.*)
+    await request.query(`
+      INSERT INTO banking.Covenant (
+        ProjectId, LoanId, FinancingType, CovenantType,
+        DSCRTestDate, ProjectedInterestRate, DSCRRequirement, ProjectedDSCR,
+        OccupancyCovenantDate, OccupancyRequirement, ProjectedOccupancy,
+        LiquidityRequirementLendingBank,
+        CovenantDate, Requirement, ProjectedValue,
+        Notes
+      )
+      VALUES (
+        @ProjectId, @LoanId, @FinancingType, @CovenantType,
+        @DSCRTestDate, @ProjectedInterestRate, @DSCRRequirement, @ProjectedDSCR,
+        @OccupancyCovenantDate, @OccupancyRequirement, @ProjectedOccupancy,
+        @LiquidityRequirementLendingBank,
+        @CovenantDate, @Requirement, @ProjectedValue,
+        @Notes
+      )
+    `);
+
+    // Get the inserted record
+    const result = await pool.request()
+      .input('projectId', sql.Int, ProjectId)
+      .input('financingType', sql.NVarChar, finalFinancingType)
       .query(`
-        INSERT INTO banking.Covenant (
-          ProjectId, LoanId, CovenantType,
-          DSCRTestDate, ProjectedInterestRate, DSCRRequirement, ProjectedDSCR,
-          OccupancyCovenantDate, OccupancyRequirement, ProjectedOccupancy,
-          LiquidityRequirementLendingBank,
-          CovenantDate, Requirement, ProjectedValue,
-          Notes
-        )
-        OUTPUT INSERTED.*
-        VALUES (
-          @ProjectId, @LoanId, @CovenantType,
-          @DSCRTestDate, @ProjectedInterestRate, @DSCRRequirement, @ProjectedDSCR,
-          @OccupancyCovenantDate, @OccupancyRequirement, @ProjectedOccupancy,
-          @LiquidityRequirementLendingBank,
-          @CovenantDate, @Requirement, @ProjectedValue,
-          @Notes
-        )
+        SELECT TOP 1 * FROM banking.Covenant 
+        WHERE ProjectId = @projectId AND FinancingType = @financingType
+        ORDER BY CovenantId DESC
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -1547,24 +1635,45 @@ export const getLiquidityRequirementsByProject = async (req: Request, res: Respo
 
 export const createLiquidityRequirement = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { ProjectId, LoanId, TotalAmount, LendingBankAmount, Notes } = req.body;
+    const { ProjectId, LoanId, FinancingType, TotalAmount, LendingBankAmount, Notes } = req.body;
 
     if (!ProjectId) {
       res.status(400).json({ success: false, error: { message: 'ProjectId is required' } });
       return;
     }
 
+    // Validate FinancingType
+    if (FinancingType && FinancingType !== 'Construction' && FinancingType !== 'Permanent') {
+      res.status(400).json({ success: false, error: { message: 'FinancingType must be "Construction" or "Permanent"' } });
+      return;
+    }
+
+    // Default to Construction if not provided
+    const finalFinancingType = FinancingType || 'Construction';
+
     const pool = await getConnection();
-    const result = await pool.request()
+    const request = pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('LoanId', sql.Int, LoanId)
+      .input('FinancingType', sql.NVarChar, finalFinancingType)
       .input('TotalAmount', sql.Decimal(18, 2), TotalAmount)
       .input('LendingBankAmount', sql.Decimal(18, 2), LendingBankAmount)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes);
+
+    // Insert without OUTPUT clause (triggers prevent OUTPUT INSERTED.*)
+    await request.query(`
+      INSERT INTO banking.LiquidityRequirement (ProjectId, LoanId, FinancingType, TotalAmount, LendingBankAmount, Notes)
+      VALUES (@ProjectId, @LoanId, @FinancingType, @TotalAmount, @LendingBankAmount, @Notes)
+    `);
+
+    // Get the inserted record
+    const result = await pool.request()
+      .input('projectId', sql.Int, ProjectId)
+      .input('financingType', sql.NVarChar, finalFinancingType)
       .query(`
-        INSERT INTO banking.LiquidityRequirement (ProjectId, LoanId, TotalAmount, LendingBankAmount, Notes)
-        OUTPUT INSERTED.*
-        VALUES (@ProjectId, @LoanId, @TotalAmount, @LendingBankAmount, @Notes)
+        SELECT TOP 1 * FROM banking.LiquidityRequirement 
+        WHERE ProjectId = @projectId AND FinancingType = @financingType
+        ORDER BY LiquidityRequirementId DESC
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -2477,7 +2586,7 @@ export const getLoanProceedsByLoan = async (req: Request, res: Response, next: N
 export const createLoanProceeds = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const {
-      ProjectId, LoanId, ProceedsDate, ProceedsAmount, CumulativeAmount,
+      ProjectId, LoanId, FinancingType, ProceedsDate, ProceedsAmount, CumulativeAmount,
       DrawNumber, DrawDescription, Notes
     } = req.body;
 
@@ -2486,26 +2595,48 @@ export const createLoanProceeds = async (req: Request, res: Response, next: Next
       return;
     }
 
+    // Validate FinancingType
+    if (FinancingType && FinancingType !== 'Construction' && FinancingType !== 'Permanent') {
+      res.status(400).json({ success: false, error: { message: 'FinancingType must be "Construction" or "Permanent"' } });
+      return;
+    }
+
+    // Default to Construction if not provided
+    const finalFinancingType = FinancingType || 'Construction';
+
     const pool = await getConnection();
-    const result = await pool.request()
+    const request = pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('LoanId', sql.Int, LoanId)
+      .input('FinancingType', sql.NVarChar, finalFinancingType)
       .input('ProceedsDate', sql.Date, ProceedsDate)
       .input('ProceedsAmount', sql.Decimal(18, 2), ProceedsAmount)
       .input('CumulativeAmount', sql.Decimal(18, 2), CumulativeAmount)
       .input('DrawNumber', sql.Int, DrawNumber)
       .input('DrawDescription', sql.NVarChar, DrawDescription)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes);
+
+    // Insert without OUTPUT clause (triggers prevent OUTPUT INSERTED.*)
+    await request.query(`
+      INSERT INTO banking.LoanProceeds (
+        ProjectId, LoanId, FinancingType, ProceedsDate, ProceedsAmount, CumulativeAmount,
+        DrawNumber, DrawDescription, Notes
+      )
+      VALUES (
+        @ProjectId, @LoanId, @FinancingType, @ProceedsDate, @ProceedsAmount, @CumulativeAmount,
+        @DrawNumber, @DrawDescription, @Notes
+      )
+    `);
+
+    // Get the inserted record
+    const result = await pool.request()
+      .input('projectId', sql.Int, ProjectId)
+      .input('proceedsDate', sql.Date, ProceedsDate)
+      .input('financingType', sql.NVarChar, finalFinancingType)
       .query(`
-        INSERT INTO banking.LoanProceeds (
-          ProjectId, LoanId, ProceedsDate, ProceedsAmount, CumulativeAmount,
-          DrawNumber, DrawDescription, Notes
-        )
-        OUTPUT INSERTED.*
-        VALUES (
-          @ProjectId, @LoanId, @ProceedsDate, @ProceedsAmount, @CumulativeAmount,
-          @DrawNumber, @DrawDescription, @Notes
-        )
+        SELECT TOP 1 * FROM banking.LoanProceeds 
+        WHERE ProjectId = @projectId AND ProceedsDate = @proceedsDate AND FinancingType = @financingType
+        ORDER BY LoanProceedsId DESC
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -2723,7 +2854,7 @@ export const getGuaranteeBurndownsByPerson = async (req: Request, res: Response,
 export const createGuaranteeBurndown = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const {
-      ProjectId, LoanId, PersonId, BurndownDate, PreviousAmount, NewAmount,
+      ProjectId, LoanId, FinancingType, PersonId, BurndownDate, PreviousAmount, NewAmount,
       ReductionAmount, PreviousPercent, NewPercent, BurndownReason, TriggeredBy, Notes
     } = req.body;
 
@@ -2731,6 +2862,15 @@ export const createGuaranteeBurndown = async (req: Request, res: Response, next:
       res.status(400).json({ success: false, error: { message: 'ProjectId, PersonId, BurndownDate, and NewAmount are required' } });
       return;
     }
+
+    // Validate FinancingType
+    if (FinancingType && FinancingType !== 'Construction' && FinancingType !== 'Permanent') {
+      res.status(400).json({ success: false, error: { message: 'FinancingType must be "Construction" or "Permanent"' } });
+      return;
+    }
+
+    // Default to Construction if not provided
+    const finalFinancingType = FinancingType || 'Construction';
 
     // Calculate ReductionAmount if not provided
     const calculatedReductionAmount = ReductionAmount !== undefined 
@@ -2740,9 +2880,10 @@ export const createGuaranteeBurndown = async (req: Request, res: Response, next:
         : null;
 
     const pool = await getConnection();
-    const result = await pool.request()
+    const request = pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('LoanId', sql.Int, LoanId)
+      .input('FinancingType', sql.NVarChar, finalFinancingType)
       .input('PersonId', sql.Int, PersonId)
       .input('BurndownDate', sql.Date, BurndownDate)
       .input('PreviousAmount', sql.Decimal(18, 2), PreviousAmount)
@@ -2752,17 +2893,30 @@ export const createGuaranteeBurndown = async (req: Request, res: Response, next:
       .input('NewPercent', sql.Decimal(10, 4), NewPercent)
       .input('BurndownReason', sql.NVarChar, BurndownReason)
       .input('TriggeredBy', sql.NVarChar, TriggeredBy)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes);
+
+    // Insert without OUTPUT clause (triggers prevent OUTPUT INSERTED.*)
+    await request.query(`
+      INSERT INTO banking.GuaranteeBurndown (
+        ProjectId, LoanId, FinancingType, PersonId, BurndownDate, PreviousAmount, NewAmount,
+        ReductionAmount, PreviousPercent, NewPercent, BurndownReason, TriggeredBy, Notes
+      )
+      VALUES (
+        @ProjectId, @LoanId, @FinancingType, @PersonId, @BurndownDate, @PreviousAmount, @NewAmount,
+        @ReductionAmount, @PreviousPercent, @NewPercent, @BurndownReason, @TriggeredBy, @Notes
+      )
+    `);
+
+    // Get the inserted record
+    const result = await pool.request()
+      .input('projectId', sql.Int, ProjectId)
+      .input('personId', sql.Int, PersonId)
+      .input('burndownDate', sql.Date, BurndownDate)
+      .input('financingType', sql.NVarChar, finalFinancingType)
       .query(`
-        INSERT INTO banking.GuaranteeBurndown (
-          ProjectId, LoanId, PersonId, BurndownDate, PreviousAmount, NewAmount,
-          ReductionAmount, PreviousPercent, NewPercent, BurndownReason, TriggeredBy, Notes
-        )
-        OUTPUT INSERTED.*
-        VALUES (
-          @ProjectId, @LoanId, @PersonId, @BurndownDate, @PreviousAmount, @NewAmount,
-          @ReductionAmount, @PreviousPercent, @NewPercent, @BurndownReason, @TriggeredBy, @Notes
-        )
+        SELECT TOP 1 * FROM banking.GuaranteeBurndown 
+        WHERE ProjectId = @projectId AND PersonId = @personId AND BurndownDate = @burndownDate AND FinancingType = @financingType
+        ORDER BY GuaranteeBurndownId DESC
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });

@@ -563,6 +563,8 @@
 /**
  * Get all DSCR tests
  * @returns {Promise<object>} { success: true, data: [{...}] }
+ * @note All banking entities (except Equity Commitments) now support FinancingType ('Construction' or 'Permanent')
+ *       to separate Construction vs Permanent financing data
  */
   async function getAllDSCRTests() {
   return apiRequest('/api/banking/dscr-tests');
@@ -588,8 +590,17 @@
 
 /**
  * Create a new DSCR test (REQUIRES AUTHENTICATION)
- * @param {object} data - { ProjectId, TestNumber, TestDate?, ProjectedInterestRate?, Requirement?, ProjectedValue? }
+ * @param {object} data - DSCR test data
+ * @param {number} data.ProjectId - Required: Project ID
+ * @param {number} data.TestNumber - Required: Test number (1, 2, or 3)
+ * @param {string} [data.FinancingType] - 'Construction' or 'Permanent' (defaults to 'Construction' if not provided)
+ * @param {number} [data.LoanId] - Optional: Loan ID
+ * @param {string} [data.TestDate] - Test date (YYYY-MM-DD)
+ * @param {string} [data.ProjectedInterestRate] - Projected interest rate
+ * @param {number} [data.Requirement] - DSCR requirement (e.g., 1.25)
+ * @param {string} [data.ProjectedValue] - Projected DSCR value
  * @returns {Promise<object>} { success: true, data: {...} }
+ * @note FinancingType separates Construction vs Permanent financing data
  */
   async function createDSCRTest(data) {
   return apiRequest('/api/banking/dscr-tests', 'POST', data);
@@ -748,8 +759,16 @@
 
 /**
  * Create a new guarantee (REQUIRES AUTHENTICATION)
- * @param {object} data - { ProjectId, PersonId, LoanId?, GuaranteePercent?, GuaranteeAmount?, Notes? }
+ * @param {object} data - Guarantee data
+ * @param {number} data.ProjectId - Required: Project ID
+ * @param {number} data.PersonId - Required: Person ID (guarantor)
+ * @param {string} [data.FinancingType] - 'Construction' or 'Permanent' (defaults to 'Construction' if not provided)
+ * @param {number} [data.LoanId] - Optional: Loan ID
+ * @param {number} [data.GuaranteePercent] - Guarantee percentage
+ * @param {number} [data.GuaranteeAmount] - Guarantee amount
+ * @param {string} [data.Notes] - Notes
  * @returns {Promise<object>} { success: true, data: {...} }
+ * @note FinancingType separates Construction vs Permanent financing data
  */
   async function createGuarantee(data) {
   return apiRequest('/api/banking/guarantees', 'POST', data);
@@ -826,6 +845,7 @@
  * @param {object} data - { 
  *   ProjectId (required), 
  *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'Other'),
+ *   FinancingType? ('Construction' | 'Permanent', defaults to 'Construction'),
  *   LoanId?,
  *   // DSCR fields:
  *   DSCRTestDate?, ProjectedInterestRate?, DSCRRequirement?, ProjectedDSCR?,
@@ -838,6 +858,7 @@
  *   Notes?
  * }
  * @returns {Promise<object>} { success: true, data: {...} }
+ * @note FinancingType separates Construction vs Permanent financing data
  * 
  * @example
  * // Create a DSCR covenant
@@ -961,8 +982,15 @@
 
 /**
  * Create a new liquidity requirement (REQUIRES AUTHENTICATION)
- * @param {object} data - { ProjectId, LoanId?, TotalAmount?, LendingBankAmount?, Notes? }
+ * @param {object} data - Liquidity requirement data
+ * @param {number} data.ProjectId - Required: Project ID
+ * @param {string} [data.FinancingType] - 'Construction' or 'Permanent' (defaults to 'Construction' if not provided)
+ * @param {number} [data.LoanId] - Optional: Loan ID
+ * @param {number} [data.TotalAmount] - Total amount
+ * @param {number} [data.LendingBankAmount] - Lending bank amount
+ * @param {string} [data.Notes] - Notes
  * @returns {Promise<object>} { success: true, data: {...} }
+ * @note FinancingType separates Construction vs Permanent financing data
  */
   async function createLiquidityRequirement(data) {
   return apiRequest('/api/banking/liquidity-requirements', 'POST', data);
@@ -1185,17 +1213,23 @@
 
 /**
  * Create loan proceeds (additional draw/disbursement) (REQUIRES AUTHENTICATION)
- * @param {object} data - { 
- *   ProjectId (required), 
- *   ProceedsDate (required), 
- *   ProceedsAmount (required),
- *   LoanId?, CumulativeAmount?, DrawNumber?, DrawDescription?, Notes?
- * }
+ * @param {object} data - Loan proceeds data
+ * @param {number} data.ProjectId - Required: Project ID
+ * @param {string} data.ProceedsDate - Required: Date of draw (YYYY-MM-DD)
+ * @param {number} data.ProceedsAmount - Required: Amount drawn
+ * @param {string} [data.FinancingType] - 'Construction' or 'Permanent' (defaults to 'Construction' if not provided)
+ * @param {number} [data.LoanId] - Optional: Loan ID
+ * @param {number} [data.CumulativeAmount] - Cumulative total drawn
+ * @param {number} [data.DrawNumber] - Draw number (1st, 2nd, etc.)
+ * @param {string} [data.DrawDescription] - Description of draw
+ * @param {string} [data.Notes] - Notes
  * @returns {Promise<object>} { success: true, data: {...} }
+ * @note FinancingType separates Construction vs Permanent financing data
  * 
  * @example
  * await createLoanProceeds({
  *   ProjectId: 1,
+ *   FinancingType: 'Construction',
  *   LoanId: 5,
  *   ProceedsDate: '2024-01-15',
  *   ProceedsAmount: 500000,

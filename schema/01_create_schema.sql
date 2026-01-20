@@ -143,6 +143,7 @@ CREATE TABLE banking.DSCRTest (
     ProjectId  INT NOT NULL,
     LoanId     INT NULL,  -- Optional: tie to specific loan
     
+    FinancingType NVARCHAR(30) NULL,  -- Construction or Permanent
     TestNumber INT NOT NULL,  -- 1, 2, or 3
     
     TestDate              DATE NULL,
@@ -152,6 +153,7 @@ CREATE TABLE banking.DSCRTest (
     
     CONSTRAINT FK_DSCR_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
     CONSTRAINT FK_DSCR_Loan    FOREIGN KEY (LoanId) REFERENCES banking.Loan(LoanId),
+    CONSTRAINT CK_DSCRTest_FinancingType CHECK (FinancingType IS NULL OR FinancingType IN ('Construction', 'Permanent')),
     CONSTRAINT UQ_DSCR_Project_Test UNIQUE (ProjectId, TestNumber)
 );
 
@@ -163,6 +165,7 @@ CREATE TABLE banking.Covenant (
     ProjectId  INT NOT NULL,
     LoanId     INT NULL,
     
+    FinancingType NVARCHAR(30) NULL,  -- Construction or Permanent
     CovenantType NVARCHAR(50) NOT NULL,  -- DSCR, Occupancy, Liquidity Requirement, Other
     
     -- Fields for DSCR covenants
@@ -187,7 +190,8 @@ CREATE TABLE banking.Covenant (
     Notes NVARCHAR(MAX) NULL,
     
     CONSTRAINT FK_Covenant_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
-    CONSTRAINT FK_Covenant_Loan    FOREIGN KEY (LoanId) REFERENCES banking.Loan(LoanId)
+    CONSTRAINT FK_Covenant_Loan    FOREIGN KEY (LoanId) REFERENCES banking.Loan(LoanId),
+    CONSTRAINT CK_Covenant_FinancingType CHECK (FinancingType IS NULL OR FinancingType IN ('Construction', 'Permanent'))
 );
 
 -- ============================================================
@@ -198,6 +202,7 @@ CREATE TABLE banking.LiquidityRequirement (
     ProjectId               INT NOT NULL,
     LoanId                  INT NULL,
     
+    FinancingType NVARCHAR(30) NULL,  -- Construction or Permanent
     TotalAmount       DECIMAL(18,2) NULL,
     LendingBankAmount DECIMAL(18,2) NULL,
     
@@ -205,6 +210,7 @@ CREATE TABLE banking.LiquidityRequirement (
     
     CONSTRAINT FK_Liquidity_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
     CONSTRAINT FK_Liquidity_Loan   FOREIGN KEY (LoanId) REFERENCES banking.Loan(LoanId),
+    CONSTRAINT CK_LiquidityRequirement_FinancingType CHECK (FinancingType IS NULL OR FinancingType IN ('Construction', 'Permanent')),
     CONSTRAINT UQ_Liquidity_Project UNIQUE (ProjectId)
 );
 
@@ -242,6 +248,7 @@ CREATE TABLE banking.Guarantee (
     LoanId     INT NULL,
     PersonId   INT NOT NULL,
     
+    FinancingType NVARCHAR(30) NULL,  -- Construction or Permanent
     GuaranteePercent DECIMAL(10,4) NULL,
     GuaranteeAmount  DECIMAL(18,2) NULL,
     
@@ -249,7 +256,8 @@ CREATE TABLE banking.Guarantee (
     
     CONSTRAINT FK_Guarantee_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
     CONSTRAINT FK_Guarantee_Loan    FOREIGN KEY (LoanId) REFERENCES banking.Loan(LoanId),
-    CONSTRAINT FK_Guarantee_Person  FOREIGN KEY (PersonId) REFERENCES core.Person(PersonId)
+    CONSTRAINT FK_Guarantee_Person  FOREIGN KEY (PersonId) REFERENCES core.Person(PersonId),
+    CONSTRAINT CK_Guarantee_FinancingType CHECK (FinancingType IS NULL OR FinancingType IN ('Construction', 'Permanent'))
 );
 
 -- ============================================================
