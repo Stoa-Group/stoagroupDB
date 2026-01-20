@@ -2067,6 +2067,24 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
     }
 
     const pool = await getConnection();
+    
+    // Validate: Individuals cannot have related parties
+    if (EquityPartnerId && RelatedPartyIds && Array.isArray(RelatedPartyIds) && RelatedPartyIds.length > 0) {
+      const partnerCheck = await pool.request()
+        .input('EquityPartnerId', sql.Int, EquityPartnerId)
+        .query('SELECT PartnerType FROM core.EquityPartner WHERE EquityPartnerId = @EquityPartnerId');
+      
+      if (partnerCheck.recordset.length > 0 && partnerCheck.recordset[0].PartnerType === 'Individual') {
+        res.status(400).json({ 
+          success: false, 
+          error: { 
+            message: 'Individual equity partners cannot have related parties. Only Entity partners can have related parties.' 
+          } 
+        });
+        return;
+      }
+    }
+    
     const transaction = new sql.Transaction(pool);
     
     try {
@@ -2192,6 +2210,36 @@ export const updateEquityCommitment = async (req: Request, res: Response, next: 
     }
 
     const pool = await getConnection();
+    
+    // Validate: Individuals cannot have related parties
+    // Get current EquityPartnerId if not being updated
+    let finalEquityPartnerId = EquityPartnerId;
+    if (!finalEquityPartnerId) {
+      const currentCommitment = await pool.request()
+        .input('id', sql.Int, id)
+        .query('SELECT EquityPartnerId FROM banking.EquityCommitment WHERE EquityCommitmentId = @id');
+      
+      if (currentCommitment.recordset.length > 0) {
+        finalEquityPartnerId = currentCommitment.recordset[0].EquityPartnerId;
+      }
+    }
+    
+    if (finalEquityPartnerId && RelatedPartyIds !== undefined && Array.isArray(RelatedPartyIds) && RelatedPartyIds.length > 0) {
+      const partnerCheck = await pool.request()
+        .input('EquityPartnerId', sql.Int, finalEquityPartnerId)
+        .query('SELECT PartnerType FROM core.EquityPartner WHERE EquityPartnerId = @EquityPartnerId');
+      
+      if (partnerCheck.recordset.length > 0 && partnerCheck.recordset[0].PartnerType === 'Individual') {
+        res.status(400).json({ 
+          success: false, 
+          error: { 
+            message: 'Individual equity partners cannot have related parties. Only Entity partners can have related parties.' 
+          } 
+        });
+        return;
+      }
+    }
+    
     const transaction = new sql.Transaction(pool);
     
     try {

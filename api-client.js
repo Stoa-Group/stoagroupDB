@@ -1107,13 +1107,14 @@
  * @param {string} [data.EquityType] - Type of equity: 'Preferred Equity', 'Common Equity', 'Profits Interest', or 'Stoa Loan'
  * @param {number[]} [data.RelatedPartyIds] - Array of EquityPartnerIds for related parties (investors involved but not the lead)
  * @returns {Promise<object>} { success: true, data: { EquityCommitmentId, RelatedParties: [...], ... } }
+ * @note Related parties are only allowed for Entity partners. Individual partners cannot have related parties.
  * @example
  * await createEquityCommitment({
  *   ProjectId: 1,
- *   EquityPartnerId: 5,  // Lead investor
+ *   EquityPartnerId: 5,  // Lead investor (must be Entity type, not Individual)
  *   EquityType: 'Preferred Equity',  // or 'Common Equity', 'Profits Interest', or 'Stoa Loan'
  *   Amount: 1000000,
- *   RelatedPartyIds: [6, 7]  // Other investors also involved
+ *   RelatedPartyIds: [6, 7]  // Other investors also involved (only if lead is Entity type)
  * });
  */
   async function createEquityCommitment(data) {
@@ -1127,11 +1128,12 @@
  * @param {string} [data.EquityType] - Type of equity: 'Preferred Equity', 'Common Equity', 'Profits Interest', or 'Stoa Loan'
  * @param {number[]} [data.RelatedPartyIds] - Array of EquityPartnerIds for related parties (pass empty array to clear all)
  * @returns {Promise<object>} { success: true, data: { EquityCommitmentId, RelatedParties: [...], ... } }
+ * @note Related parties are only allowed for Entity partners. Individual partners cannot have related parties.
  * @example
  * await updateEquityCommitment(123, {
  *   EquityType: 'Profits Interest',
  *   Amount: 1500000,
- *   RelatedPartyIds: [6, 7, 8]  // Update related parties
+ *   RelatedPartyIds: [6, 7, 8]  // Update related parties (only if lead is Entity type)
  * });
  */
   async function updateEquityCommitment(id, data) {
