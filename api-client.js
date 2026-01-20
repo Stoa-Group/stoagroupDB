@@ -9,6 +9,12 @@
  * - Use login() to get a token, then pass it to authenticated requests
  * - Store token in localStorage or sessionStorage for persistence
  * 
+ * FINANCING TYPE SEPARATION:
+ * - All banking entities (except Equity Commitments) support FinancingType
+ * - FinancingType must be 'Construction' or 'Permanent' to separate financing data
+ * - Defaults to 'Construction' if not specified
+ * - Always specify FinancingType when creating/updating banking records
+ * 
  * TO CHANGE API URL:
  * - Set window.API_BASE_URL before loading this file, OR
  * - Call setApiBaseUrl('your-api-url') after loading
@@ -1298,19 +1304,27 @@
 
 /**
  * Create guarantee burndown (guarantee reduction) (REQUIRES AUTHENTICATION)
- * @param {object} data - { 
- *   ProjectId (required), 
- *   PersonId (required), 
- *   BurndownDate (required), 
- *   NewAmount (required),
- *   LoanId?, PreviousAmount?, ReductionAmount?, PreviousPercent?, NewPercent?, 
- *   BurndownReason?, TriggeredBy?, Notes?
- * }
+ * @param {object} data - Guarantee burndown data
+ * @param {number} data.ProjectId - Required: Project ID
+ * @param {number} data.PersonId - Required: Person ID (guarantor)
+ * @param {string} data.BurndownDate - Required: Date of burndown (YYYY-MM-DD)
+ * @param {number} data.NewAmount - Required: New guarantee amount after reduction
+ * @param {string} [data.FinancingType] - 'Construction' or 'Permanent' (defaults to 'Construction' if not provided)
+ * @param {number} [data.LoanId] - Optional: Loan ID
+ * @param {number} [data.PreviousAmount] - Previous guarantee amount
+ * @param {number} [data.ReductionAmount] - Amount reduced (auto-calculated if not provided)
+ * @param {number} [data.PreviousPercent] - Previous guarantee percentage
+ * @param {number} [data.NewPercent] - New guarantee percentage
+ * @param {string} [data.BurndownReason] - Reason for reduction
+ * @param {string} [data.TriggeredBy] - What triggered the burndown
+ * @param {string} [data.Notes] - Notes
  * @returns {Promise<object>} { success: true, data: {...} }
+ * @note FinancingType separates Construction vs Permanent financing data
  * 
  * @example
  * await createGuaranteeBurndown({
  *   ProjectId: 1,
+ *   FinancingType: 'Construction',
  *   PersonId: 1, // Toby
  *   BurndownDate: '2027-03-31',
  *   PreviousAmount: 1000000,
