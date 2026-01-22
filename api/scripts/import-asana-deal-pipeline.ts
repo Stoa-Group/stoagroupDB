@@ -17,18 +17,70 @@ import * as path from 'path';
 import { getPool } from './db-manipulate';
 import sql from 'mssql';
 
-// Load environment variables
-const envPath = path.resolve(__dirname, '../../.env');
-dotenv.config({ path: envPath });
+// Load environment variables - try multiple locations
+const possibleEnvPaths = [
+  path.resolve(__dirname, '../../../deal pipeline-FOR REFERENCE DO NOT EDIT/.env'),  // Deal pipeline .env
+  path.resolve(__dirname, '../../.env'),  // Root .env
+  path.resolve(process.cwd(), '.env'),  // Current directory .env
+];
 
-const ASANA_API_BASE = 'https://app.asana.com/api/1.0';
+let envLoaded = false;
+for (const envPath of possibleEnvPaths) {
+  try {
+    const result = dotenv.config({ path: envPath });
+    if (!result.error && (process.env.ASANA_ACCESS_TOKEN || process.env.ASANA_PAT || process.env.CLIENT_ID)) {
+      envLoaded = true;
+      console.log(`✅ Loaded .env from: ${envPath}`);
+      break;
+    }
+  } catch (e) {
+    // Continue to next path
+  }
+}
+
+// Load from default location if not found
+if (!envLoaded) {
+  dotenv.config();
+}
+
+// Get Asana configuration
+const ASANA_API_BASE = process.env.ASANA_API_BASE?.replace(/['"]/g, '').trim() || 'https://app.asana.com/api/1.0';
 const ASANA_ACCESS_TOKEN = process.env.ASANA_ACCESS_TOKEN || process.env.ASANA_PAT;
+const ASANA_CLIENT_ID = process.env.CLIENT_ID;
+const ASANA_CLIENT_SECRET = process.env.CLIENT_SECRET;
 const ASANA_PROJECT_GID = process.env.ASANA_PROJECT_GID || '1207455912614114'; // Default Deal Pipeline project
 
-if (!ASANA_ACCESS_TOKEN) {
-  console.error('❌ Error: ASANA_ACCESS_TOKEN or ASANA_PAT not found in .env file');
+if (!ASANA_ACCESS_TOKEN && (!ASANA_CLIENT_ID || !ASANA_CLIENT_SECRET)) {
+  console.error('❌ Error: Asana authentication not found!');
+  console.error('');
+  console.error('   Option 1: Use Personal Access Token (PAT) - Recommended for import');
+  console.error('      Add to .env: ASANA_ACCESS_TOKEN=your_token_here');
+  console.error('      Get token from: https://app.asana.com/0/my-apps');
+  console.error('');
+  console.error('   Option 2: Use OAuth (requires additional setup)');
+  console.error('      Add to .env: CLIENT_ID=your_client_id');
+  console.error('      Add to .env: CLIENT_SECRET=your_client_secret');
+  console.error('      Note: OAuth requires authorization flow - PAT is simpler for import');
+  console.error('');
   process.exit(1);
 }
+
+console.log(`📡 Asana API Configuration:`);
+console.log(`   API Base: ${ASANA_API_BASE}`);
+console.log(`   Project GID: ${ASANA_PROJECT_GID}`);
+if (ASANA_ACCESS_TOKEN) {
+  console.log(`   Auth: Personal Access Token (PAT) ✅`);
+} else if (ASANA_CLIENT_ID && ASANA_CLIENT_SECRET) {
+  console.log(`   Auth: OAuth (CLIENT_ID/CLIENT_SECRET) ⚠️`);
+  console.warn('   ⚠️  Warning: OAuth flow requires user authorization.');
+  console.warn('   For import script, please use ASANA_ACCESS_TOKEN (Personal Access Token)');
+  console.warn('   Get token from: https://app.asana.com/0/my-apps');
+  console.warn('   Or add ASANA_ACCESS_TOKEN to .env file');
+  console.warn('');
+} else {
+  console.log(`   Auth: None ❌`);
+}
+console.log('');
 
 interface AsanaTask {
   gid: string;
@@ -84,13 +136,32 @@ interface ParsedDealData {
   AsanaTaskGid: string;
 }
 
+// Helper function to get Asana access token (if using OAuth)
+async function getAsanaAccessToken(): Promise<string | null> {
+  // If we have a PAT, use it
+  if (ASANA_ACCESS_TOKEN) {
+    return ASANA_ACCESS_TOKEN;
+  }
+  
+  // If we have CLIENT_ID and CLIENT_SECRET, we could implement OAuth flow here
+  // For now, return null and let the caller handle the error
+  // Note: Asana OAuth requires user authorization, so PAT is simpler for import scripts
+  return null;
+}
+
 // Helper function to make Asana API requests
 async function asanaRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
+  const accessToken = await getAsanaAccessToken();
+  
+  if (!accessToken) {
+    throw new Error('No Asana access token available. Please set ASANA_ACCESS_TOKEN in .env file.');
+  }
+  
   const url = `${ASANA_API_BASE}${endpoint}`;
   const response = await fetch(url, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${ASANA_ACCESS_TOKEN}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       ...options.headers,
     },
