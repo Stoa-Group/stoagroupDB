@@ -1395,3 +1395,475 @@ export const deleteClosedProperty = async (req: Request, res: Response, next: Ne
   }
 };
 
+
+// ============================================================
+// DEAL PIPELINE CONTROLLER (Land Development Deal Tracker)
+// ============================================================
+
+export const getAllDealPipelines = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request().query(`
+      SELECT 
+        dp.DealPipelineId,
+        dp.ProjectId,
+        p.ProjectName,
+        p.City,
+        p.State,
+        p.Region,
+        p.Units,
+        p.ProductType,
+        p.Stage,
+        p.EstimatedConstructionStartDate,
+        r.RegionName AS RegionName,
+        pm.FullName AS PreConManagerName,
+        pm.Email AS PreConManagerEmail,
+        pm.Phone AS PreConManagerPhone,
+        dp.Bank,
+        dp.StartDate,
+        dp.UnitCount,
+        dp.PreConManagerId,
+        dp.ConstructionLoanClosingDate,
+        dp.Notes,
+        dp.Priority,
+        dp.Acreage,
+        dp.LandPrice,
+        dp.SqFtPrice,
+        dp.ExecutionDate,
+        dp.DueDiligenceDate,
+        dp.ClosingDate,
+        dp.PurchasingEntity,
+        dp.Cash,
+        dp.OpportunityZone,
+        dp.ClosingNotes,
+        dp.AsanaTaskGid,
+        dp.AsanaProjectGid,
+        dp.CreatedAt,
+        dp.UpdatedAt
+      FROM pipeline.DealPipeline dp
+      LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
+      LEFT JOIN core.Region r ON p.Region = r.RegionName
+      LEFT JOIN core.Person pm ON dp.PreConManagerId = pm.PersonId
+      ORDER BY dp.DealPipelineId
+    `);
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getDealPipelineById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT 
+          dp.DealPipelineId,
+          dp.ProjectId,
+          p.ProjectName,
+          p.City,
+          p.State,
+          p.Region,
+          p.Units,
+          p.ProductType,
+          p.Stage,
+          p.EstimatedConstructionStartDate,
+          r.RegionName AS RegionName,
+          pm.FullName AS PreConManagerName,
+          pm.Email AS PreConManagerEmail,
+          pm.Phone AS PreConManagerPhone,
+          dp.Bank,
+          dp.StartDate,
+          dp.UnitCount,
+          dp.PreConManagerId,
+          dp.ConstructionLoanClosingDate,
+          dp.Notes,
+          dp.Priority,
+          dp.Acreage,
+          dp.LandPrice,
+          dp.SqFtPrice,
+          dp.ExecutionDate,
+          dp.DueDiligenceDate,
+          dp.ClosingDate,
+          dp.PurchasingEntity,
+          dp.Cash,
+          dp.OpportunityZone,
+          dp.ClosingNotes,
+          dp.AsanaTaskGid,
+          dp.AsanaProjectGid,
+          dp.CreatedAt,
+          dp.UpdatedAt
+        FROM pipeline.DealPipeline dp
+        LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
+        LEFT JOIN core.Region r ON p.Region = r.RegionName
+        LEFT JOIN core.Person pm ON dp.PreConManagerId = pm.PersonId
+        WHERE dp.DealPipelineId = @id
+      `);
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Deal Pipeline record not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getDealPipelineByProjectId = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .query(`
+        SELECT 
+          dp.DealPipelineId,
+          dp.ProjectId,
+          p.ProjectName,
+          p.City,
+          p.State,
+          p.Region,
+          p.Units,
+          p.ProductType,
+          p.Stage,
+          p.EstimatedConstructionStartDate,
+          r.RegionName AS RegionName,
+          pm.FullName AS PreConManagerName,
+          pm.Email AS PreConManagerEmail,
+          pm.Phone AS PreConManagerPhone,
+          dp.Bank,
+          dp.StartDate,
+          dp.UnitCount,
+          dp.PreConManagerId,
+          dp.ConstructionLoanClosingDate,
+          dp.Notes,
+          dp.Priority,
+          dp.Acreage,
+          dp.LandPrice,
+          dp.SqFtPrice,
+          dp.ExecutionDate,
+          dp.DueDiligenceDate,
+          dp.ClosingDate,
+          dp.PurchasingEntity,
+          dp.Cash,
+          dp.OpportunityZone,
+          dp.ClosingNotes,
+          dp.AsanaTaskGid,
+          dp.AsanaProjectGid,
+          dp.CreatedAt,
+          dp.UpdatedAt
+        FROM pipeline.DealPipeline dp
+        LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
+        LEFT JOIN core.Region r ON p.Region = r.RegionName
+        LEFT JOIN core.Person pm ON dp.PreConManagerId = pm.PersonId
+        WHERE dp.ProjectId = @projectId
+      `);
+    
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Deal Pipeline record for this project not found' } });
+      return;
+    }
+    
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createDealPipeline = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const {
+      ProjectId,
+      ProjectName, City, State, Region, Units, ProductType, Stage, EstimatedConstructionStartDate,
+      Bank, StartDate, UnitCount, PreConManagerId, ConstructionLoanClosingDate, Notes, Priority,
+      Acreage, LandPrice, ExecutionDate, DueDiligenceDate, ClosingDate,
+      PurchasingEntity, Cash, OpportunityZone, ClosingNotes,
+      AsanaTaskGid, AsanaProjectGid
+    } = req.body;
+
+    if (!ProjectId) {
+      res.status(400).json({ success: false, error: { message: 'ProjectId is required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    
+    // Update CORE attributes if provided
+    if (ProjectName !== undefined || City !== undefined || State !== undefined || Region !== undefined || 
+        Units !== undefined || ProductType !== undefined || Stage !== undefined || EstimatedConstructionStartDate !== undefined) {
+      const updateFields: string[] = [];
+      const updateRequest = pool.request().input('ProjectId', sql.Int, ProjectId);
+      
+      if (ProjectName !== undefined) { updateFields.push('ProjectName = @ProjectName'); updateRequest.input('ProjectName', sql.NVarChar(255), ProjectName); }
+      if (City !== undefined) { updateFields.push('City = @City'); updateRequest.input('City', sql.NVarChar(100), City); }
+      if (State !== undefined) { updateFields.push('State = @State'); updateRequest.input('State', sql.NVarChar(50), State); }
+      if (Region !== undefined) { updateFields.push('Region = @Region'); updateRequest.input('Region', sql.NVarChar(50), Region); }
+      if (Units !== undefined) { updateFields.push('Units = @Units'); updateRequest.input('Units', sql.Int, Units); }
+      if (ProductType !== undefined) { updateFields.push('ProductType = @ProductType'); updateRequest.input('ProductType', sql.NVarChar(50), ProductType); }
+      if (Stage !== undefined) { updateFields.push('Stage = @Stage'); updateRequest.input('Stage', sql.NVarChar(50), Stage); }
+      if (EstimatedConstructionStartDate !== undefined) { updateFields.push('EstimatedConstructionStartDate = @EstimatedConstructionStartDate'); updateRequest.input('EstimatedConstructionStartDate', sql.Date, EstimatedConstructionStartDate); }
+      
+      updateFields.push('UpdatedAt = SYSDATETIME()');
+      await updateRequest.query(`UPDATE core.Project SET ${updateFields.join(', ')} WHERE ProjectId = @ProjectId`);
+    }
+
+    // Calculate SqFtPrice
+    let sqFtPrice: number | null = null;
+    if (LandPrice && Acreage && Acreage > 0) {
+      sqFtPrice = LandPrice / (Acreage * 43560);
+    }
+
+    // Use UnitCount to update Units in CORE if UnitCount is provided but Units is not
+    if (UnitCount !== undefined && Units === undefined) {
+      await pool.request()
+        .input('ProjectId', sql.Int, ProjectId)
+        .input('UnitCount', sql.Int, UnitCount)
+        .query('UPDATE core.Project SET Units = @UnitCount, UpdatedAt = SYSDATETIME() WHERE ProjectId = @ProjectId');
+    }
+
+    // Insert Deal Pipeline specific data
+    const result = await pool.request()
+      .input('ProjectId', sql.Int, ProjectId)
+      .input('Bank', sql.NVarChar(255), Bank)
+      .input('StartDate', sql.Date, StartDate)
+      .input('UnitCount', sql.Int, UnitCount)
+      .input('PreConManagerId', sql.Int, PreConManagerId)
+      .input('ConstructionLoanClosingDate', sql.Date, ConstructionLoanClosingDate)
+      .input('Notes', sql.NVarChar(sql.MAX), Notes)
+      .input('Priority', sql.NVarChar(20), Priority)
+      .input('Acreage', sql.Decimal(18, 4), Acreage)
+      .input('LandPrice', sql.Decimal(18, 2), LandPrice)
+      .input('SqFtPrice', sql.Decimal(18, 2), sqFtPrice)
+      .input('ExecutionDate', sql.Date, ExecutionDate)
+      .input('DueDiligenceDate', sql.Date, DueDiligenceDate)
+      .input('ClosingDate', sql.Date, ClosingDate)
+      .input('PurchasingEntity', sql.NVarChar(255), PurchasingEntity)
+      .input('Cash', sql.Bit, Cash)
+      .input('OpportunityZone', sql.Bit, OpportunityZone)
+      .input('ClosingNotes', sql.NVarChar(sql.MAX), ClosingNotes)
+      .input('AsanaTaskGid', sql.NVarChar(100), AsanaTaskGid)
+      .input('AsanaProjectGid', sql.NVarChar(100), AsanaProjectGid)
+      .query(`
+        IF NOT EXISTS (SELECT 1 FROM pipeline.DealPipeline WHERE ProjectId = @ProjectId)
+        BEGIN
+          INSERT INTO pipeline.DealPipeline (
+            ProjectId, Bank, StartDate, UnitCount, PreConManagerId,
+            ConstructionLoanClosingDate, Notes, Priority, Acreage, LandPrice,
+            SqFtPrice, ExecutionDate, DueDiligenceDate, ClosingDate,
+            PurchasingEntity, Cash, OpportunityZone, ClosingNotes,
+            AsanaTaskGid, AsanaProjectGid
+          )
+          VALUES (
+            @ProjectId, @Bank, @StartDate, @UnitCount, @PreConManagerId,
+            @ConstructionLoanClosingDate, @Notes, @Priority, @Acreage, @LandPrice,
+            @SqFtPrice, @ExecutionDate, @DueDiligenceDate, @ClosingDate,
+            @PurchasingEntity, @Cash, @OpportunityZone, @ClosingNotes,
+            @AsanaTaskGid, @AsanaProjectGid
+          );
+        END
+        
+        SELECT DealPipelineId FROM pipeline.DealPipeline WHERE ProjectId = @ProjectId;
+      `);
+
+    // Get the full record
+    const fullRecord = await pool.request()
+      .input('ProjectId', sql.Int, ProjectId)
+      .query(`
+        SELECT 
+          dp.DealPipelineId, dp.ProjectId,
+          p.ProjectName, p.City, p.State, p.Region, p.Units, p.ProductType, p.Stage, p.EstimatedConstructionStartDate,
+          r.RegionName AS RegionName,
+          pm.FullName AS PreConManagerName, pm.Email AS PreConManagerEmail, pm.Phone AS PreConManagerPhone,
+          dp.Bank, dp.StartDate, dp.UnitCount, dp.PreConManagerId, dp.ConstructionLoanClosingDate,
+          dp.Notes, dp.Priority, dp.Acreage, dp.LandPrice, dp.SqFtPrice,
+          dp.ExecutionDate, dp.DueDiligenceDate, dp.ClosingDate,
+          dp.PurchasingEntity, dp.Cash, dp.OpportunityZone, dp.ClosingNotes,
+          dp.AsanaTaskGid, dp.AsanaProjectGid, dp.CreatedAt, dp.UpdatedAt
+        FROM pipeline.DealPipeline dp
+        LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
+        LEFT JOIN core.Region r ON p.Region = r.RegionName
+        LEFT JOIN core.Person pm ON dp.PreConManagerId = pm.PersonId
+        WHERE dp.ProjectId = @ProjectId
+      `);
+
+    if (fullRecord.recordset.length === 0) {
+      res.status(500).json({ success: false, error: { message: 'Failed to create Deal Pipeline record' } });
+      return;
+    }
+
+    res.status(201).json({ success: true, data: fullRecord.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 2627) {
+      res.status(409).json({ success: false, error: { message: 'Deal Pipeline record for this project already exists' } });
+      return;
+    }
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or PreConManagerId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const updateDealPipeline = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const {
+      ProjectName, City, State, Region, Units, ProductType, Stage, EstimatedConstructionStartDate,
+      Bank, StartDate, UnitCount, PreConManagerId, ConstructionLoanClosingDate, Notes, Priority,
+      Acreage, LandPrice, ExecutionDate, DueDiligenceDate, ClosingDate,
+      PurchasingEntity, Cash, OpportunityZone, ClosingNotes,
+      AsanaTaskGid, AsanaProjectGid
+    } = req.body;
+
+    const pool = await getConnection();
+    
+    const dpResult = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT ProjectId FROM pipeline.DealPipeline WHERE DealPipelineId = @id');
+    
+    if (dpResult.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Deal Pipeline record not found' } });
+      return;
+    }
+
+    const projectId = dpResult.recordset[0].ProjectId;
+    
+    // Update CORE attributes if provided
+    if (ProjectName !== undefined || City !== undefined || State !== undefined || Region !== undefined || 
+        Units !== undefined || ProductType !== undefined || Stage !== undefined || EstimatedConstructionStartDate !== undefined) {
+      const updateFields: string[] = [];
+      const updateRequest = pool.request().input('ProjectId', sql.Int, projectId);
+      
+      if (ProjectName !== undefined) { updateFields.push('ProjectName = @ProjectName'); updateRequest.input('ProjectName', sql.NVarChar(255), ProjectName); }
+      if (City !== undefined) { updateFields.push('City = @City'); updateRequest.input('City', sql.NVarChar(100), City); }
+      if (State !== undefined) { updateFields.push('State = @State'); updateRequest.input('State', sql.NVarChar(50), State); }
+      if (Region !== undefined) { updateFields.push('Region = @Region'); updateRequest.input('Region', sql.NVarChar(50), Region); }
+      if (Units !== undefined) { updateFields.push('Units = @Units'); updateRequest.input('Units', sql.Int, Units); }
+      if (ProductType !== undefined) { updateFields.push('ProductType = @ProductType'); updateRequest.input('ProductType', sql.NVarChar(50), ProductType); }
+      if (Stage !== undefined) { updateFields.push('Stage = @Stage'); updateRequest.input('Stage', sql.NVarChar(50), Stage); }
+      if (EstimatedConstructionStartDate !== undefined) { updateFields.push('EstimatedConstructionStartDate = @EstimatedConstructionStartDate'); updateRequest.input('EstimatedConstructionStartDate', sql.Date, EstimatedConstructionStartDate); }
+      
+      updateFields.push('UpdatedAt = SYSDATETIME()');
+      await updateRequest.query(`UPDATE core.Project SET ${updateFields.join(', ')} WHERE ProjectId = @ProjectId`);
+    }
+
+    // Use UnitCount to update Units in CORE if UnitCount is provided but Units is not
+    if (UnitCount !== undefined && Units === undefined) {
+      await pool.request()
+        .input('ProjectId', sql.Int, projectId)
+        .input('UnitCount', sql.Int, UnitCount)
+        .query('UPDATE core.Project SET Units = @UnitCount, UpdatedAt = SYSDATETIME() WHERE ProjectId = @ProjectId');
+    }
+
+    // Build dynamic update query
+    const fields: string[] = [];
+    const request = pool.request().input('id', sql.Int, id);
+
+    if (Bank !== undefined) { fields.push('Bank = @Bank'); request.input('Bank', sql.NVarChar(255), Bank); }
+    if (StartDate !== undefined) { fields.push('StartDate = @StartDate'); request.input('StartDate', sql.Date, StartDate); }
+    if (UnitCount !== undefined) { fields.push('UnitCount = @UnitCount'); request.input('UnitCount', sql.Int, UnitCount); }
+    if (PreConManagerId !== undefined) { fields.push('PreConManagerId = @PreConManagerId'); request.input('PreConManagerId', sql.Int, PreConManagerId); }
+    if (ConstructionLoanClosingDate !== undefined) { fields.push('ConstructionLoanClosingDate = @ConstructionLoanClosingDate'); request.input('ConstructionLoanClosingDate', sql.Date, ConstructionLoanClosingDate); }
+    if (Notes !== undefined) { fields.push('Notes = @Notes'); request.input('Notes', sql.NVarChar(sql.MAX), Notes); }
+    if (Priority !== undefined) { fields.push('Priority = @Priority'); request.input('Priority', sql.NVarChar(20), Priority); }
+    if (Acreage !== undefined) { fields.push('Acreage = @Acreage'); request.input('Acreage', sql.Decimal(18, 4), Acreage); }
+    if (LandPrice !== undefined) { fields.push('LandPrice = @LandPrice'); request.input('LandPrice', sql.Decimal(18, 2), LandPrice); }
+    if (ExecutionDate !== undefined) { fields.push('ExecutionDate = @ExecutionDate'); request.input('ExecutionDate', sql.Date, ExecutionDate); }
+    if (DueDiligenceDate !== undefined) { fields.push('DueDiligenceDate = @DueDiligenceDate'); request.input('DueDiligenceDate', sql.Date, DueDiligenceDate); }
+    if (ClosingDate !== undefined) { fields.push('ClosingDate = @ClosingDate'); request.input('ClosingDate', sql.Date, ClosingDate); }
+    if (PurchasingEntity !== undefined) { fields.push('PurchasingEntity = @PurchasingEntity'); request.input('PurchasingEntity', sql.NVarChar(255), PurchasingEntity); }
+    if (Cash !== undefined) { fields.push('Cash = @Cash'); request.input('Cash', sql.Bit, Cash); }
+    if (OpportunityZone !== undefined) { fields.push('OpportunityZone = @OpportunityZone'); request.input('OpportunityZone', sql.Bit, OpportunityZone); }
+    if (ClosingNotes !== undefined) { fields.push('ClosingNotes = @ClosingNotes'); request.input('ClosingNotes', sql.NVarChar(sql.MAX), ClosingNotes); }
+    if (AsanaTaskGid !== undefined) { fields.push('AsanaTaskGid = @AsanaTaskGid'); request.input('AsanaTaskGid', sql.NVarChar(100), AsanaTaskGid); }
+    if (AsanaProjectGid !== undefined) { fields.push('AsanaProjectGid = @AsanaProjectGid'); request.input('AsanaProjectGid', sql.NVarChar(100), AsanaProjectGid); }
+
+    // Recalculate SqFtPrice if LandPrice or Acreage changed
+    if (LandPrice !== undefined || Acreage !== undefined) {
+      const currentData = await pool.request()
+        .input('id', sql.Int, id)
+        .query('SELECT LandPrice, Acreage FROM pipeline.DealPipeline WHERE DealPipelineId = @id');
+      
+      const finalLandPrice = LandPrice !== undefined ? LandPrice : currentData.recordset[0].LandPrice;
+      const finalAcreage = Acreage !== undefined ? Acreage : currentData.recordset[0].Acreage;
+
+      let sqFtPrice: number | null = null;
+      if (finalLandPrice && finalAcreage && finalAcreage > 0) {
+        sqFtPrice = finalLandPrice / (finalAcreage * 43560);
+      }
+      
+      fields.push('SqFtPrice = @SqFtPrice');
+      request.input('SqFtPrice', sql.Decimal(18, 2), sqFtPrice);
+    }
+
+    if (fields.length === 0 && ProjectName === undefined && City === undefined && State === undefined && 
+        Region === undefined && Units === undefined && ProductType === undefined && Stage === undefined && 
+        EstimatedConstructionStartDate === undefined) {
+      res.status(400).json({ success: false, error: { message: 'No fields to update' } });
+      return;
+    }
+
+    if (fields.length > 0) {
+      fields.push('UpdatedAt = SYSDATETIME()');
+      await request.query(`UPDATE pipeline.DealPipeline SET ${fields.join(', ')} WHERE DealPipelineId = @id`);
+    }
+
+    // Get the updated record
+    const updated = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT 
+          dp.DealPipelineId, dp.ProjectId,
+          p.ProjectName, p.City, p.State, p.Region, p.Units, p.ProductType, p.Stage, p.EstimatedConstructionStartDate,
+          r.RegionName AS RegionName,
+          pm.FullName AS PreConManagerName, pm.Email AS PreConManagerEmail, pm.Phone AS PreConManagerPhone,
+          dp.Bank, dp.StartDate, dp.UnitCount, dp.PreConManagerId, dp.ConstructionLoanClosingDate,
+          dp.Notes, dp.Priority, dp.Acreage, dp.LandPrice, dp.SqFtPrice,
+          dp.ExecutionDate, dp.DueDiligenceDate, dp.ClosingDate,
+          dp.PurchasingEntity, dp.Cash, dp.OpportunityZone, dp.ClosingNotes,
+          dp.AsanaTaskGid, dp.AsanaProjectGid, dp.CreatedAt, dp.UpdatedAt
+        FROM pipeline.DealPipeline dp
+        LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
+        LEFT JOIN core.Region r ON p.Region = r.RegionName
+        LEFT JOIN core.Person pm ON dp.PreConManagerId = pm.PersonId
+        WHERE dp.DealPipelineId = @id
+      `);
+
+    if (updated.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Deal Pipeline record not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: updated.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or PreConManagerId' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const deleteDealPipeline = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM pipeline.DealPipeline WHERE DealPipelineId = @id');
+
+    if (result.rowsAffected[0] === 0) {
+      res.status(404).json({ success: false, error: { message: 'Deal Pipeline record not found' } });
+      return;
+    }
+
+    res.json({ success: true, message: 'Deal Pipeline record deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};

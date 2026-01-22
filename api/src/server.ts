@@ -201,6 +201,14 @@ app.get('/api', (req: Request, res: Response) => {
           update: 'PUT /api/pipeline/closed-properties/:id',
           delete: 'DELETE /api/pipeline/closed-properties/:id',
         },
+        dealPipeline: {
+          getAll: 'GET /api/pipeline/deal-pipeline',
+          getById: 'GET /api/pipeline/deal-pipeline/:id',
+          getByProjectId: 'GET /api/pipeline/deal-pipeline/project/:projectId',
+          create: 'POST /api/pipeline/deal-pipeline',
+          update: 'PUT /api/pipeline/deal-pipeline/:id',
+          delete: 'DELETE /api/pipeline/deal-pipeline/:id',
+        },
       },
     },
   });

@@ -1711,6 +1711,123 @@
 }
 
 // ============================================================
+// PIPELINE: DEAL PIPELINE (Land Development Deal Tracker)
+// ============================================================
+
+/**
+ * Get all deal pipeline records
+ * 
+ * Returns all deals with CORE attributes joined:
+ * - ProjectName, City, State, Region, Units, ProductType, Stage (from core.Project)
+ * - All Deal Pipeline specific fields (Bank, StartDate, UnitCount, PreConManager, etc.)
+ * 
+ * @returns {Promise<object>} { success: true, data: [...] }
+ * @example
+ * const result = await getAllDealPipelines();
+ * console.log('Deals:', result.data);
+ */
+  async function getAllDealPipelines() {
+  return apiRequest('/api/pipeline/deal-pipeline');
+}
+
+/**
+ * Get a deal pipeline record by ID
+ * @param {number} id - Deal Pipeline ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+  async function getDealPipelineById(id) {
+  return apiRequest(`/api/pipeline/deal-pipeline/${id}`);
+}
+
+/**
+ * Get deal pipeline record by Project ID
+ * @param {number} projectId - Project ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+  async function getDealPipelineByProjectId(projectId) {
+  return apiRequest(`/api/pipeline/deal-pipeline/project/${projectId}`);
+}
+
+/**
+ * Create a new deal pipeline record
+ * 
+ * Creates/updates Project in core.Project and creates DealPipeline record.
+ * 
+ * CORE attributes (updates core.Project if provided):
+ * - ProjectName, City, State, Region, Units, ProductType, Stage, EstimatedConstructionStartDate
+ * 
+ * Deal Pipeline specific attributes:
+ * - Bank: string (bank name)
+ * - StartDate: string (YYYY-MM-DD)
+ * - UnitCount: number (updates core.Project.Units if Units not provided)
+ * - PreConManagerId: number (FK to core.Person)
+ * - ConstructionLoanClosingDate: string (YYYY-MM-DD)
+ * - Notes: string
+ * - Priority: 'High' | 'Medium' | 'Low'
+ * - Acreage: number
+ * - LandPrice: number (price)
+ * - ExecutionDate: string (YYYY-MM-DD)
+ * - DueDiligenceDate: string (YYYY-MM-DD)
+ * - ClosingDate: string (YYYY-MM-DD)
+ * - PurchasingEntity: string
+ * - Cash: boolean
+ * - OpportunityZone: boolean
+ * - ClosingNotes: string
+ * - AsanaTaskGid: string (for sync tracking)
+ * - AsanaProjectGid: string (for sync tracking)
+ * 
+ * Note: SqFtPrice is automatically calculated as LandPrice / (Acreage * 43560)
+ * 
+ * @param {object} data - Deal pipeline data
+ * @returns {Promise<object>} { success: true, data: {...} }
+ * @example
+ * await createDealPipeline({
+ *   ProjectId: 1,
+ *   ProjectName: 'The Heights at Picardy',
+ *   City: 'Baton Rouge',
+ *   State: 'LA',
+ *   Region: 'Gulf Coast',
+ *   Stage: 'Prospective',
+ *   Bank: 'B1Bank',
+ *   StartDate: '2024-01-15',
+ *   UnitCount: 232,
+ *   Priority: 'High',
+ *   Acreage: 10.5,
+ *   LandPrice: 5000000,
+ *   Cash: true
+ * });
+ */
+  async function createDealPipeline(data) {
+  return apiRequest('/api/pipeline/deal-pipeline', 'POST', data);
+}
+
+/**
+ * Update a deal pipeline record
+ * 
+ * Can update:
+ * - CORE attributes (ProjectName, City, State, Region, Units, ProductType, Stage, EstimatedConstructionStartDate)
+ * - Any Deal Pipeline specific fields
+ * 
+ * Note: SqFtPrice is automatically recalculated if LandPrice or Acreage changes
+ * 
+ * @param {number} id - Deal Pipeline ID
+ * @param {object} data - Fields to update (same as createDealPipeline)
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+  async function updateDealPipeline(id, data) {
+  return apiRequest(`/api/pipeline/deal-pipeline/${id}`, 'PUT', data);
+}
+
+/**
+ * Delete a deal pipeline record
+ * @param {number} id - Deal Pipeline ID
+ * @returns {Promise<object>} { success: true, message: '...' }
+ */
+  async function deleteDealPipeline(id) {
+  return apiRequest(`/api/pipeline/deal-pipeline/${id}`, 'DELETE');
+}
+
+// ============================================================
 // IMS INVESTOR HELPER FUNCTIONS (Legacy - kept for compatibility)
 // ============================================================
 
@@ -1974,6 +2091,14 @@
   API.createClosedProperty = createClosedProperty;
   API.updateClosedProperty = updateClosedProperty;
   API.deleteClosedProperty = deleteClosedProperty;
+  
+  // Pipeline - Deal Pipeline
+  API.getAllDealPipelines = getAllDealPipelines;
+  API.getDealPipelineById = getDealPipelineById;
+  API.getDealPipelineByProjectId = getDealPipelineByProjectId;
+  API.createDealPipeline = createDealPipeline;
+  API.updateDealPipeline = updateDealPipeline;
+  API.deleteDealPipeline = deleteDealPipeline;
   
   // IMS Investor Resolution
   API.getInvestorNameFromIMSId = getInvestorNameFromIMSId;

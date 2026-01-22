@@ -126,6 +126,7 @@ async function verifySchema(pool: sql.ConnectionPool): Promise<void> {
     { schema: 'pipeline', table: 'CommercialListed' },
     { schema: 'pipeline', table: 'CommercialAcreage' },
     { schema: 'pipeline', table: 'ClosedProperty' },
+    { schema: 'pipeline', table: 'DealPipeline' },
   ];
   
   const missingTables: string[] = [];

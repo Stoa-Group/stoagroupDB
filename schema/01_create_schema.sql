@@ -398,7 +398,7 @@ CREATE TABLE pipeline.ClosedProperty (
     ProjectId        INT NOT NULL,
     
     Status           NVARCHAR(50) NULL,  -- Multifamily, Commercial, etc.
-    ClosingDate      DATE NULL,
+    LandClosingDate  DATE NULL,  -- Closing date (renamed from ClosingDate)
     Acreage          DECIMAL(18,4) NULL,
     Units            INT NULL,
     Price            DECIMAL(18,2) NULL,
@@ -412,6 +412,54 @@ CREATE TABLE pipeline.ClosedProperty (
     CONSTRAINT FK_CP_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId),
     CONSTRAINT UQ_CP_Project UNIQUE (ProjectId)
 );
+
+-- ============================================================
+-- PIPELINE: DEAL PIPELINE (Land Development Deal Tracker)
+-- ============================================================
+CREATE TABLE pipeline.DealPipeline (
+    DealPipelineId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_DealPipeline PRIMARY KEY,
+    ProjectId INT NOT NULL,
+    
+    -- Asana tracking fields
+    Bank NVARCHAR(255) NULL,
+    StartDate DATE NULL,
+    UnitCount INT NULL,
+    PreConManagerId INT NULL,
+    ConstructionLoanClosingDate DATE NULL,
+    Notes NVARCHAR(MAX) NULL,
+    Priority NVARCHAR(20) NULL,
+    
+    -- Land Development specific fields
+    Acreage DECIMAL(18,4) NULL,
+    LandPrice DECIMAL(18,2) NULL,
+    SqFtPrice DECIMAL(18,2) NULL,
+    ExecutionDate DATE NULL,
+    DueDiligenceDate DATE NULL,
+    ClosingDate DATE NULL,
+    PurchasingEntity NVARCHAR(255) NULL,
+    Cash BIT NULL,
+    OpportunityZone BIT NULL,
+    ClosingNotes NVARCHAR(MAX) NULL,
+    
+    -- Asana metadata
+    AsanaTaskGid NVARCHAR(100) NULL,
+    AsanaProjectGid NVARCHAR(100) NULL,
+    
+    -- Timestamps
+    CreatedAt DATETIME2(0) NOT NULL DEFAULT SYSDATETIME(),
+    UpdatedAt DATETIME2(0) NULL,
+    
+    CONSTRAINT FK_DP_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId) ON DELETE CASCADE,
+    CONSTRAINT FK_DP_PreConManager FOREIGN KEY (PreConManagerId) REFERENCES core.Person(PersonId),
+    CONSTRAINT UQ_DP_Project UNIQUE (ProjectId),
+    CONSTRAINT CK_DP_Priority CHECK (Priority IS NULL OR Priority IN ('High', 'Medium', 'Low'))
+);
+
+CREATE INDEX IX_DealPipeline_ProjectId ON pipeline.DealPipeline(ProjectId);
+CREATE INDEX IX_DealPipeline_Bank ON pipeline.DealPipeline(Bank);
+CREATE INDEX IX_DealPipeline_PreConManagerId ON pipeline.DealPipeline(PreConManagerId);
+CREATE INDEX IX_DealPipeline_StartDate ON pipeline.DealPipeline(StartDate);
+CREATE INDEX IX_DealPipeline_AsanaTaskGid ON pipeline.DealPipeline(AsanaTaskGid);
 
 PRINT 'Schema created successfully. ProjectID is now the source of truth.';
 
