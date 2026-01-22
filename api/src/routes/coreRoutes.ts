@@ -24,6 +24,13 @@ router.post('/persons', coreController.createPerson);
 router.put('/persons/:id', coreController.updatePerson);
 router.delete('/persons/:id', coreController.deletePerson);
 
+// Pre-Con Manager routes
+router.get('/precon-managers', coreController.getAllPreConManagers);
+router.get('/precon-managers/:id', coreController.getPreConManagerById);
+router.post('/precon-managers', coreController.createPreConManager);
+router.put('/precon-managers/:id', coreController.updatePreConManager);
+router.delete('/precon-managers/:id', coreController.deletePreConManager);
+
 // Equity Partner routes
 router.get('/equity-partners', coreController.getAllEquityPartners);
 router.get('/equity-partners/ims/:imsId', coreController.getEquityPartnerByIMSId); // Get by IMS Investor Profile ID (must come before /:id)

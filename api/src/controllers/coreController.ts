@@ -565,6 +565,144 @@ export const deletePerson = async (req: Request, res: Response, next: NextFuncti
 };
 
 // ============================================================
+// PRE-CON MANAGER CONTROLLER
+// ============================================================
+
+export const getAllPreConManagers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request()
+      .query('SELECT * FROM core.PreConManager ORDER BY FullName');
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPreConManagerById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM core.PreConManager WHERE PreConManagerId = @id');
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Pre-Con Manager not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createPreConManager = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { FullName, Email, Phone } = req.body;
+
+    if (!FullName) {
+      res.status(400).json({ success: false, error: { message: 'FullName is required' } });
+      return;
+    }
+
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('FullName', sql.NVarChar, FullName)
+      .input('Email', sql.NVarChar, Email)
+      .input('Phone', sql.NVarChar, Phone)
+      .query(`
+        INSERT INTO core.PreConManager (FullName, Email, Phone)
+        OUTPUT INSERTED.*
+        VALUES (@FullName, @Email, @Phone)
+      `);
+
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 2627) {
+      res.status(409).json({ success: false, error: { message: 'Pre-Con Manager with this name already exists' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const updatePreConManager = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { FullName, Email, Phone } = req.body;
+
+    const pool = await getConnection();
+    const fields: string[] = [];
+    const request = pool.request().input('id', sql.Int, id);
+
+    if (FullName !== undefined) {
+      fields.push('FullName = @FullName');
+      request.input('FullName', sql.NVarChar, FullName);
+    }
+    if (Email !== undefined) {
+      fields.push('Email = @Email');
+      request.input('Email', sql.NVarChar, Email);
+    }
+    if (Phone !== undefined) {
+      fields.push('Phone = @Phone');
+      request.input('Phone', sql.NVarChar, Phone);
+    }
+
+    if (fields.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'No fields to update' } });
+      return;
+    }
+
+    fields.push('UpdatedAt = SYSDATETIME()');
+
+    const result = await request.query(`
+      UPDATE core.PreConManager
+      SET ${fields.join(', ')}
+      WHERE PreConManagerId = @id;
+      SELECT * FROM core.PreConManager WHERE PreConManagerId = @id;
+    `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Pre-Con Manager not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error: any) {
+    if (error.number === 2627) {
+      res.status(409).json({ success: false, error: { message: 'Pre-Con Manager with this name already exists' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const deletePreConManager = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM core.PreConManager WHERE PreConManagerId = @id');
+
+    if (result.rowsAffected[0] === 0) {
+      res.status(404).json({ success: false, error: { message: 'Pre-Con Manager not found' } });
+      return;
+    }
+
+    res.json({ success: true, message: 'Pre-Con Manager deleted successfully' });
+  } catch (error: any) {
+    if (error.number === 547) {
+      res.status(409).json({ success: false, error: { message: 'Cannot delete Pre-Con Manager with associated DealPipeline records' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+// ============================================================
 // EQUITY PARTNER CONTROLLER
 // ============================================================
 

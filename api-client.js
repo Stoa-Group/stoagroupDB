@@ -243,6 +243,53 @@
   return apiRequest(`/api/core/persons/${id}`, 'DELETE');
 }
 
+// PRE-CON MANAGERS
+/**
+ * Get all Pre-Con Managers
+ * @returns {Promise<object>} { success: true, data: [{ PreConManagerId, FullName, Email, Phone, CreatedAt, UpdatedAt }] }
+ */
+  async function getAllPreConManagers() {
+  return apiRequest('/api/core/precon-managers');
+}
+
+/**
+ * Get Pre-Con Manager by ID
+ * @param {number} id - Pre-Con Manager ID
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+  async function getPreConManagerById(id) {
+  return apiRequest(`/api/core/precon-managers/${id}`);
+}
+
+/**
+ * Create a new Pre-Con Manager (REQUIRES AUTHENTICATION)
+ * @param {object} data - { FullName, Email?, Phone? }
+ * @returns {Promise<object>} { success: true, data: { PreConManagerId, FullName, Email, Phone, CreatedAt, UpdatedAt } }
+ */
+  async function createPreConManager(data) {
+  return apiRequest('/api/core/precon-managers', 'POST', data);
+}
+
+/**
+ * Update a Pre-Con Manager (REQUIRES AUTHENTICATION)
+ * @param {number} id - Pre-Con Manager ID
+ * @param {object} data - { FullName?, Email?, Phone? }
+ * @returns {Promise<object>} { success: true, data: {...} }
+ */
+  async function updatePreConManager(id, data) {
+  return apiRequest(`/api/core/precon-managers/${id}`, 'PUT', data);
+}
+
+/**
+ * Delete a Pre-Con Manager (REQUIRES AUTHENTICATION)
+ * @param {number} id - Pre-Con Manager ID
+ * @returns {Promise<object>} { success: true, message: 'Pre-Con Manager deleted successfully' }
+ * @note Will fail if Pre-Con Manager is referenced by any DealPipeline records
+ */
+  async function deletePreConManager(id) {
+  return apiRequest(`/api/core/precon-managers/${id}`, 'DELETE');
+}
+
 // EQUITY PARTNERS
 /**
  * Get all equity partners
@@ -1950,6 +1997,12 @@
   API.createPerson = createPerson;
   API.updatePerson = updatePerson;
   API.deletePerson = deletePerson;
+
+  API.getAllPreConManagers = getAllPreConManagers;
+  API.getPreConManagerById = getPreConManagerById;
+  API.createPreConManager = createPreConManager;
+  API.updatePreConManager = updatePreConManager;
+  API.deletePreConManager = deletePreConManager;
   
   // Core - Equity Partners
   API.getAllEquityPartners = getAllEquityPartners;

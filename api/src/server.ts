@@ -81,6 +81,13 @@ app.get('/api', (req: Request, res: Response) => {
           update: 'PUT /api/core/persons/:id',
           delete: 'DELETE /api/core/persons/:id',
         },
+        preconManagers: {
+          getAll: 'GET /api/core/precon-managers',
+          getById: 'GET /api/core/precon-managers/:id',
+          create: 'POST /api/core/precon-managers',
+          update: 'PUT /api/core/precon-managers/:id',
+          delete: 'DELETE /api/core/precon-managers/:id',
+        },
         equityPartners: {
           getAll: 'GET /api/core/equity-partners',
           getById: 'GET /api/core/equity-partners/:id',
