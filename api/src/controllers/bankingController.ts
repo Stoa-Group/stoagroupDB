@@ -191,6 +191,13 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
+    const loanId = result.recordset[0].LoanId;
+    
+    // Auto-create I/O Maturity covenant if IOMaturityDate is provided
+    if (IOMaturityDate && LoanPhase === 'Construction') {
+      await syncIOMaturityCovenant(pool, ProjectId, loanId, IOMaturityDate);
+    }
+
     res.status(201).json({ success: true, data: result.recordset[0] });
   } catch (error: any) {
     if (error.number === 547) {
@@ -421,6 +428,26 @@ export const updateLoanByProject = async (req: Request, res: Response, next: Nex
       WHERE LoanId = @id
     `);
 
+    // Get updated loan to check IOMaturityDate and LoanPhase
+    const loanCheck = await pool.request()
+      .input('id', sql.Int, loanId)
+      .query('SELECT ProjectId, LoanPhase, IOMaturityDate FROM banking.Loan WHERE LoanId = @id');
+    
+    if (loanCheck.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Loan not found after update' } });
+      return;
+    }
+
+    const loanRecord = loanCheck.recordset[0];
+    const loanProjectId = loanRecord.ProjectId;
+    const loanPhase = loanRecord.LoanPhase;
+    const ioMaturityDate = loanRecord.IOMaturityDate;
+    
+    // Auto-create/update I/O Maturity covenant if IOMaturityDate is provided and LoanPhase is Construction
+    if (ioMaturityDate && loanPhase === 'Construction') {
+      await syncIOMaturityCovenant(pool, loanProjectId, loanId, ioMaturityDate);
+    }
+
     // Return updated loan with calculated fields
     const result = await pool.request()
       .input('id', sql.Int, loanId)
@@ -437,11 +464,6 @@ export const updateLoanByProject = async (req: Request, res: Response, next: Nex
         FROM banking.Loan l
         WHERE l.LoanId = @id
       `);
-
-    if (result.recordset.length === 0) {
-      res.status(404).json({ success: false, error: { message: 'Loan not found after update' } });
-      return;
-    }
 
     res.json({ success: true, data: result.recordset[0] });
   } catch (error: any) {
@@ -1253,6 +1275,86 @@ export const deleteGuarantee = async (req: Request, res: Response, next: NextFun
 };
 
 // ============================================================
+// HELPER FUNCTION: Sync I/O Maturity Covenant
+// ============================================================
+
+/**
+ * Auto-creates or updates an I/O Maturity covenant based on loan's IOMaturityDate
+ * Sets IsCompleted = true if current date >= IOMaturityDate
+ */
+async function syncIOMaturityCovenant(
+  pool: sql.ConnectionPool,
+  projectId: number,
+  loanId: number,
+  ioMaturityDate: Date | string | null
+): Promise<void> {
+  try {
+    if (!ioMaturityDate) return;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to start of day for comparison
+    
+    const maturityDate = typeof ioMaturityDate === 'string' ? new Date(ioMaturityDate) : ioMaturityDate;
+    const maturityDateNormalized = new Date(maturityDate);
+    maturityDateNormalized.setHours(0, 0, 0, 0);
+    
+    const isCompleted = today >= maturityDateNormalized;
+
+    // Check if I/O Maturity covenant already exists
+    const existingCovenant = await pool.request()
+      .input('projectId', sql.Int, projectId)
+      .input('loanId', sql.Int, loanId)
+      .query(`
+        SELECT CovenantId, IsCompleted
+        FROM banking.Covenant
+        WHERE ProjectId = @projectId
+          AND LoanId = @loanId
+          AND CovenantType = 'I/O Maturity'
+      `);
+
+    if (existingCovenant.recordset.length > 0) {
+      // Update existing covenant
+      const covenantId = existingCovenant.recordset[0].CovenantId;
+      await pool.request()
+        .input('covenantId', sql.Int, covenantId)
+        .input('covenantDate', sql.Date, maturityDate)
+        .input('isCompleted', sql.Bit, isCompleted)
+        .query(`
+          UPDATE banking.Covenant
+          SET CovenantDate = @covenantDate,
+              Requirement = 'Construction I/O Maturity',
+              IsCompleted = @isCompleted,
+              UpdatedAt = SYSDATETIME()
+          WHERE CovenantId = @covenantId
+        `);
+    } else {
+      // Create new I/O Maturity covenant
+      await pool.request()
+        .input('projectId', sql.Int, projectId)
+        .input('loanId', sql.Int, loanId)
+        .input('financingType', sql.NVarChar, 'Construction')
+        .input('covenantType', sql.NVarChar, 'I/O Maturity')
+        .input('covenantDate', sql.Date, maturityDate)
+        .input('requirement', sql.NVarChar, 'Construction I/O Maturity')
+        .input('isCompleted', sql.Bit, isCompleted)
+        .query(`
+          INSERT INTO banking.Covenant (
+            ProjectId, LoanId, FinancingType, CovenantType,
+            CovenantDate, Requirement, IsCompleted
+          )
+          VALUES (
+            @projectId, @loanId, @financingType, @covenantType,
+            @covenantDate, @requirement, @isCompleted
+          )
+        `);
+    }
+  } catch (error) {
+    // Log error but don't fail the loan operation
+    console.error('Error syncing I/O Maturity covenant:', error);
+  }
+}
+
+// ============================================================
 // COVENANT CONTROLLER
 // ============================================================
 
@@ -1320,7 +1422,7 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
     }
 
     // Validate CovenantType
-    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'];
+    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Other'];
     if (!validTypes.includes(CovenantType)) {
       res.status(400).json({ 
         success: false, 
@@ -1429,7 +1531,7 @@ export const createCovenantByProject = async (req: Request, res: Response, next:
     }
 
     // Validate CovenantType
-    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'];
+    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Other'];
     if (!validTypes.includes(CovenantType)) {
       res.status(400).json({ 
         success: false, 
@@ -1516,7 +1618,7 @@ export const updateCovenant = async (req: Request, res: Response, next: NextFunc
 
     // Validate CovenantType if provided
     if (covenantData.CovenantType !== undefined) {
-      const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'];
+      const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Other'];
       if (!validTypes.includes(covenantData.CovenantType)) {
         res.status(400).json({ 
           success: false, 

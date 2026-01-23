@@ -889,17 +889,18 @@
 /**
  * Create a new covenant (REQUIRES AUTHENTICATION)
  * 
- * CovenantType options: 'DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'
+ * CovenantType options: 'DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Other'
  * 
  * Fields vary by CovenantType:
  * - DSCR: DSCRTestDate (Date), ProjectedInterestRate (string), DSCRRequirement (string), ProjectedDSCR (string)
  * - Occupancy: OccupancyCovenantDate (Date), OccupancyRequirement (string), ProjectedOccupancy (string, e.g., "76.5%")
  * - Liquidity Requirement: LiquidityRequirementLendingBank (number/decimal)
+ * - I/O Maturity: CovenantDate (Date), Requirement (string) - Auto-created when Construction loan has IOMaturityDate
  * - Other: CovenantDate (Date), Requirement (string), ProjectedValue (string)
  * 
  * @param {object} data - { 
  *   ProjectId (required), 
- *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'Other'),
+ *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'I/O Maturity' | 'Other'),
  *   FinancingType? ('Construction' | 'Permanent', defaults to 'Construction'),
  *   LoanId?,
  *   // DSCR fields:
@@ -954,17 +955,18 @@
  * Create covenant by Project ID (REQUIRES AUTHENTICATION)
  * Automatically finds the construction loan for the project
  * 
- * CovenantType options: 'DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'
+ * CovenantType options: 'DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Other'
  * 
  * Fields vary by CovenantType:
  * - DSCR: DSCRTestDate (Date), ProjectedInterestRate (string), DSCRRequirement (string), ProjectedDSCR (string)
  * - Occupancy: OccupancyCovenantDate (Date), OccupancyRequirement (string), ProjectedOccupancy (string, e.g., "76.5%")
  * - Liquidity Requirement: LiquidityRequirementLendingBank (number/decimal)
+ * - I/O Maturity: CovenantDate (Date), Requirement (string) - Auto-created when Construction loan has IOMaturityDate
  * - Other: CovenantDate (Date), Requirement (string), ProjectedValue (string)
  * 
  * @param {number} projectId - Project ID
  * @param {object} data - { 
- *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'Other'),
+ *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'I/O Maturity' | 'Other'),
  *   // DSCR fields:
  *   DSCRTestDate?, ProjectedInterestRate?, DSCRRequirement?, ProjectedDSCR?,
  *   // Occupancy fields:
