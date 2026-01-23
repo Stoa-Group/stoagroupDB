@@ -193,10 +193,17 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
 
     const loanId = result.recordset[0].LoanId;
     
-    // Auto-create I/O Maturity covenant if IOMaturityDate is provided
-    if (IOMaturityDate && LoanPhase === 'Construction') {
-      await syncIOMaturityCovenant(pool, ProjectId, loanId, IOMaturityDate);
-    }
+    // Auto-create maturity covenants for all maturity dates
+    await syncAllMaturityCovenants(
+      pool,
+      ProjectId,
+      loanId,
+      LoanPhase,
+      IOMaturityDate,
+      MaturityDate,
+      MiniPermMaturity,
+      PermPhaseMaturity
+    );
 
     res.status(201).json({ success: true, data: result.recordset[0] });
   } catch (error: any) {
@@ -441,11 +448,26 @@ export const updateLoanByProject = async (req: Request, res: Response, next: Nex
     const loanRecord = loanCheck.recordset[0];
     const loanProjectId = loanRecord.ProjectId;
     const loanPhase = loanRecord.LoanPhase;
-    const ioMaturityDate = loanRecord.IOMaturityDate;
     
-    // Auto-create/update I/O Maturity covenant if IOMaturityDate is provided and LoanPhase is Construction
-    if (ioMaturityDate && loanPhase === 'Construction') {
-      await syncIOMaturityCovenant(pool, loanProjectId, loanId, ioMaturityDate);
+    // Get all maturity dates
+    const maturityCheck = await pool.request()
+      .input('id', sql.Int, loanId)
+      .query('SELECT IOMaturityDate, MaturityDate, MiniPermMaturity, PermPhaseMaturity FROM banking.Loan WHERE LoanId = @id');
+    
+    if (maturityCheck.recordset.length > 0) {
+      const maturityDates = maturityCheck.recordset[0];
+      
+      // Auto-create/update all maturity covenants
+      await syncAllMaturityCovenants(
+        pool,
+        loanProjectId,
+        loanId,
+        loanPhase,
+        maturityDates.IOMaturityDate,
+        maturityDates.MaturityDate,
+        maturityDates.MiniPermMaturity,
+        maturityDates.PermPhaseMaturity
+      );
     }
 
     // Return updated loan with calculated fields
@@ -1275,34 +1297,37 @@ export const deleteGuarantee = async (req: Request, res: Response, next: NextFun
 };
 
 // ============================================================
-// HELPER FUNCTION: Sync I/O Maturity Covenant
+// HELPER FUNCTION: Sync Maturity Covenants
 // ============================================================
 
 /**
- * Auto-creates or updates an I/O Maturity covenant based on loan's IOMaturityDate
+ * Auto-creates or updates maturity covenants based on loan's maturity dates
  * IsCompleted remains manual - users must check it off themselves
  */
-async function syncIOMaturityCovenant(
+async function syncMaturityCovenant(
   pool: sql.ConnectionPool,
   projectId: number,
   loanId: number,
-  ioMaturityDate: Date | string | null
+  maturityDate: Date | string | null,
+  covenantType: string,
+  requirement: string
 ): Promise<void> {
   try {
-    if (!ioMaturityDate) return;
+    if (!maturityDate) return;
     
-    const maturityDate = typeof ioMaturityDate === 'string' ? new Date(ioMaturityDate) : ioMaturityDate;
+    const date = typeof maturityDate === 'string' ? new Date(maturityDate) : maturityDate;
 
-    // Check if I/O Maturity covenant already exists
+    // Check if maturity covenant already exists
     const existingCovenant = await pool.request()
       .input('projectId', sql.Int, projectId)
       .input('loanId', sql.Int, loanId)
+      .input('covenantType', sql.NVarChar, covenantType)
       .query(`
         SELECT CovenantId, IsCompleted
         FROM banking.Covenant
         WHERE ProjectId = @projectId
           AND LoanId = @loanId
-          AND CovenantType = 'I/O Maturity'
+          AND CovenantType = @covenantType
       `);
 
     if (existingCovenant.recordset.length > 0) {
@@ -1310,22 +1335,23 @@ async function syncIOMaturityCovenant(
       const covenantId = existingCovenant.recordset[0].CovenantId;
       await pool.request()
         .input('covenantId', sql.Int, covenantId)
-        .input('covenantDate', sql.Date, maturityDate)
+        .input('covenantDate', sql.Date, date)
+        .input('requirement', sql.NVarChar, requirement)
         .query(`
           UPDATE banking.Covenant
           SET CovenantDate = @covenantDate,
-              Requirement = 'Construction I/O Maturity',
+              Requirement = @requirement,
               UpdatedAt = SYSDATETIME()
           WHERE CovenantId = @covenantId
         `);
     } else {
-      // Create new I/O Maturity covenant (IsCompleted defaults to false)
+      // Create new maturity covenant (IsCompleted defaults to false)
       await pool.request()
         .input('projectId', sql.Int, projectId)
         .input('loanId', sql.Int, loanId)
-        .input('covenantType', sql.NVarChar, 'I/O Maturity')
-        .input('covenantDate', sql.Date, maturityDate)
-        .input('requirement', sql.NVarChar, 'Construction I/O Maturity')
+        .input('covenantType', sql.NVarChar, covenantType)
+        .input('covenantDate', sql.Date, date)
+        .input('requirement', sql.NVarChar, requirement)
         .query(`
           INSERT INTO banking.Covenant (
             ProjectId, LoanId, CovenantType,
@@ -1339,7 +1365,45 @@ async function syncIOMaturityCovenant(
     }
   } catch (error) {
     // Log error but don't fail the loan operation
-    console.error('Error syncing I/O Maturity covenant:', error);
+    console.error(`Error syncing ${covenantType} covenant:`, error);
+  }
+}
+
+/**
+ * Sync all maturity covenants for a loan
+ */
+async function syncAllMaturityCovenants(
+  pool: sql.ConnectionPool,
+  projectId: number,
+  loanId: number,
+  loanPhase: string,
+  ioMaturityDate: Date | string | null,
+  maturityDate: Date | string | null,
+  miniPermMaturity: Date | string | null,
+  permPhaseMaturity: Date | string | null
+): Promise<void> {
+  // I/O Maturity - for Construction loans
+  if (ioMaturityDate && loanPhase === 'Construction') {
+    await syncMaturityCovenant(pool, projectId, loanId, ioMaturityDate, 'I/O Maturity', 'Construction I/O Maturity');
+  }
+
+  // General Maturity Date
+  if (maturityDate) {
+    const maturityType = loanPhase === 'Construction' ? 'Loan Maturity' : 
+                         loanPhase === 'Permanent' ? 'Permanent Loan Maturity' :
+                         loanPhase === 'MiniPerm' ? 'Mini-Perm Maturity' :
+                         'Loan Maturity';
+    await syncMaturityCovenant(pool, projectId, loanId, maturityDate, maturityType, `${loanPhase} Loan Maturity`);
+  }
+
+  // Mini-Perm Maturity
+  if (miniPermMaturity) {
+    await syncMaturityCovenant(pool, projectId, loanId, miniPermMaturity, 'Mini-Perm Maturity', 'Mini-Perm Loan Maturity');
+  }
+
+  // Perm Phase Maturity
+  if (permPhaseMaturity) {
+    await syncMaturityCovenant(pool, projectId, loanId, permPhaseMaturity, 'Perm Phase Maturity', 'Permanent Phase Maturity');
   }
 }
 
@@ -1411,7 +1475,7 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
     }
 
     // Validate CovenantType
-    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Other'];
+    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Loan Maturity', 'Permanent Loan Maturity', 'Mini-Perm Maturity', 'Perm Phase Maturity', 'Other'];
     if (!validTypes.includes(CovenantType)) {
       res.status(400).json({ 
         success: false, 
@@ -1520,7 +1584,7 @@ export const createCovenantByProject = async (req: Request, res: Response, next:
     }
 
     // Validate CovenantType
-    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Other'];
+    const validTypes = ['DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Loan Maturity', 'Permanent Loan Maturity', 'Mini-Perm Maturity', 'Perm Phase Maturity', 'Other'];
     if (!validTypes.includes(CovenantType)) {
       res.status(400).json({ 
         success: false, 

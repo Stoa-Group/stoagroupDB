@@ -345,17 +345,42 @@ function CovenantCardInline({ covenant, onUpdate }) {
 }
 ```
 
-## Special Case: I/O Maturity Covenants
+## Special Case: Auto-Created Maturity Covenants
 
-I/O Maturity covenants are **automatically created** when a Construction loan has an `IOMaturityDate`. These covenants:
+All maturity dates for loans are **automatically created** as covenants. These covenants:
 
 - Are created automatically (no manual creation needed)
-- Have `CovenantType = 'I/O Maturity'`
-- Have `CovenantDate` set to the loan's `IOMaturityDate`
 - Default to `IsCompleted = false`
 - Can be updated like any other covenant
 
-**Note:** If a Construction loan's `IOMaturityDate` is updated, the covenant date will be automatically updated, but `IsCompleted` and `Notes` are preserved.
+### Maturity Covenant Types:
+
+1. **I/O Maturity** (`CovenantType = 'I/O Maturity'`)
+   - Auto-created when Construction loan has `IOMaturityDate`
+   - `CovenantDate` = loan's `IOMaturityDate`
+   - `Requirement` = 'Construction I/O Maturity'
+
+2. **Loan Maturity** (`CovenantType = 'Loan Maturity'`)
+   - Auto-created when Construction loan has `MaturityDate`
+   - `CovenantDate` = loan's `MaturityDate`
+   - `Requirement` = 'Construction Loan Maturity'
+
+3. **Permanent Loan Maturity** (`CovenantType = 'Permanent Loan Maturity'`)
+   - Auto-created when Permanent loan has `MaturityDate`
+   - `CovenantDate` = loan's `MaturityDate`
+   - `Requirement` = 'Permanent Loan Maturity'
+
+4. **Mini-Perm Maturity** (`CovenantType = 'Mini-Perm Maturity'`)
+   - Auto-created when loan has `MiniPermMaturity`
+   - `CovenantDate` = loan's `MiniPermMaturity`
+   - `Requirement` = 'Mini-Perm Loan Maturity'
+
+5. **Perm Phase Maturity** (`CovenantType = 'Perm Phase Maturity'`)
+   - Auto-created when loan has `PermPhaseMaturity`
+   - `CovenantDate` = loan's `PermPhaseMaturity`
+   - `Requirement` = 'Permanent Phase Maturity'
+
+**Note:** If a loan's maturity date is updated, the corresponding covenant date will be automatically updated, but `IsCompleted` and `Notes` are preserved.
 
 ## Styling Recommendations
 
