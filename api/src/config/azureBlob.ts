@@ -6,18 +6,25 @@
 
 import { BlobServiceClient, BlockBlobClient } from '@azure/storage-blob';
 
-const CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STRING;
-const CONTAINER_NAME = process.env.AZURE_STORAGE_CONTAINER || 'deal-pipeline-attachments';
+/** Read at call time so scripts that load dotenv after import still see env vars. */
+function getConnectionString(): string | undefined {
+  return process.env.AZURE_STORAGE_CONNECTION_STRING;
+}
+function getContainerName(): string {
+  return process.env.AZURE_STORAGE_CONTAINER || 'deal-pipeline-attachments';
+}
 
 export function isBlobStorageConfigured(): boolean {
-  return Boolean(CONNECTION_STRING && CONTAINER_NAME);
+  return Boolean(getConnectionString() && getContainerName());
 }
 
 function getBlobClient(blobPath: string): BlockBlobClient | null {
-  if (!CONNECTION_STRING || !CONTAINER_NAME) return null;
-  const client = BlobServiceClient.fromConnectionString(CONNECTION_STRING);
-  const container = client.getContainerClient(CONTAINER_NAME);
-  return container.getBlockBlobClient(blobPath);
+  const conn = getConnectionString();
+  const container = getContainerName();
+  if (!conn || !container) return null;
+  const client = BlobServiceClient.fromConnectionString(conn);
+  const containerClient = client.getContainerClient(container);
+  return containerClient.getBlockBlobClient(blobPath);
 }
 
 /**
@@ -125,8 +132,10 @@ export async function deleteBlob(blobPath: string): Promise<boolean> {
  * Ensure container exists (call once at startup if using blob).
  */
 export async function ensureContainerExists(): Promise<void> {
-  if (!CONNECTION_STRING || !CONTAINER_NAME) return;
-  const client = BlobServiceClient.fromConnectionString(CONNECTION_STRING);
-  const container = client.getContainerClient(CONTAINER_NAME);
+  const conn = getConnectionString();
+  const containerName = getContainerName();
+  if (!conn || !containerName) return;
+  const client = BlobServiceClient.fromConnectionString(conn);
+  const container = client.getContainerClient(containerName);
   await container.createIfNotExists();
 }

@@ -12,6 +12,7 @@ import {
   blobExists,
   deleteBlob as deleteBlobFile,
 } from '../config/azureBlob';
+import { normalizeState, normalizeStateInPayload } from '../utils/stateAbbrev';
 
 // ============================================================
 // UNDER CONTRACT CONTROLLER
@@ -48,7 +49,7 @@ export const getAllUnderContracts = async (req: Request, res: Response, next: Ne
       LEFT JOIN core.Region r ON p.Region = r.RegionName
       ORDER BY uc.UnderContractId
     `);
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -94,7 +95,7 @@ export const getUnderContractById = async (req: Request, res: Response, next: Ne
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -140,7 +141,7 @@ export const getUnderContractByProjectId = async (req: Request, res: Response, n
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -400,7 +401,7 @@ export const updateUnderContract = async (req: Request, res: Response, next: Nex
       return;
     }
 
-    res.json({ success: true, data: updated.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(updated.recordset[0]) });
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId' } });
@@ -460,7 +461,7 @@ export const getAllCommercialListed = async (req: Request, res: Response, next: 
       LEFT JOIN core.Project p ON cl.ProjectId = p.ProjectId
       ORDER BY cl.CommercialListedId
     `);
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -502,7 +503,7 @@ export const getCommercialListedById = async (req: Request, res: Response, next:
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -544,7 +545,7 @@ export const getCommercialListedByProjectId = async (req: Request, res: Response
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -743,7 +744,7 @@ export const updateCommercialListed = async (req: Request, res: Response, next: 
       return;
     }
 
-    res.json({ success: true, data: updated.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(updated.recordset[0]) });
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId' } });
@@ -796,7 +797,7 @@ export const getAllCommercialAcreage = async (req: Request, res: Response, next:
       LEFT JOIN core.Project p ON ca.ProjectId = p.ProjectId
       ORDER BY ca.CommercialAcreageId
     `);
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -831,7 +832,7 @@ export const getCommercialAcreageById = async (req: Request, res: Response, next
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -866,7 +867,7 @@ export const getCommercialAcreageByProjectId = async (req: Request, res: Respons
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -996,7 +997,7 @@ export const updateCommercialAcreage = async (req: Request, res: Response, next:
       return;
     }
 
-    res.json({ success: true, data: updated.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(updated.recordset[0]) });
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId' } });
@@ -1057,7 +1058,7 @@ export const getAllClosedProperties = async (req: Request, res: Response, next: 
       LEFT JOIN core.Project p ON cp.ProjectId = p.ProjectId
       ORDER BY cp.ClosedPropertyId
     `);
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -1100,7 +1101,7 @@ export const getClosedPropertyById = async (req: Request, res: Response, next: N
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -1145,7 +1146,7 @@ export const createClosedProperty = async (req: Request, res: Response, next: Ne
       }
       if (State !== undefined) {
         updateFields.push('State = @State');
-        updateRequest.input('State', sql.NVarChar, State);
+        updateRequest.input('State', sql.NVarChar, normalizeState(State));
       }
       if (Address !== undefined) {
         updateFields.push('Address = @Address');
@@ -1273,7 +1274,7 @@ export const updateClosedProperty = async (req: Request, res: Response, next: Ne
       }
       if (State !== undefined) {
         updateFields.push('State = @State');
-        updateRequest.input('State', sql.NVarChar, State);
+        updateRequest.input('State', sql.NVarChar, normalizeState(State));
       }
       if (Address !== undefined) {
         updateFields.push('Address = @Address');
@@ -1377,7 +1378,7 @@ export const updateClosedProperty = async (req: Request, res: Response, next: Ne
       return;
     }
 
-    res.json({ success: true, data: updated.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(updated.recordset[0]) });
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId' } });
@@ -1471,7 +1472,7 @@ export const getAllDealPipelines = async (req: Request, res: Response, next: Nex
       LEFT JOIN core.PreConManager pm ON dp.PreConManagerId = pm.PreConManagerId
       ORDER BY dp.DealPipelineId
     `);
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -1544,7 +1545,7 @@ export const getDealPipelineById = async (req: Request, res: Response, next: Nex
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -1617,7 +1618,7 @@ export const getDealPipelineByProjectId = async (req: Request, res: Response, ne
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -1686,7 +1687,7 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
           const createProjectResult = await pool.request()
             .input('ProjectName', sql.NVarChar(255), ProjectName)
             .input('City', sql.NVarChar(100), City)
-            .input('State', sql.NVarChar(50), State)
+            .input('State', sql.NVarChar(50), normalizeState(State))
             .input('Region', sql.NVarChar(50), Region)
             .input('Units', sql.Int, Units)
             .input('ProductType', sql.NVarChar(50), ProductType)
@@ -1737,7 +1738,7 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
       }
       if (State !== undefined) {
         updateFields.push('State = @State');
-        updateRequest.input('State', sql.NVarChar(50), State);
+        updateRequest.input('State', sql.NVarChar(50), normalizeState(State));
       }
       if (Region !== undefined) {
         updateFields.push('Region = @Region');
@@ -1986,7 +1987,7 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
       }
       if (State !== undefined) {
         updateFields.push('State = @State');
-        updateRequest.input('State', sql.NVarChar(50), State);
+        updateRequest.input('State', sql.NVarChar(50), normalizeState(State));
       }
       if (Region !== undefined) {
         updateFields.push('Region = @Region');
@@ -2238,7 +2239,7 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
       return;
     }
 
-    res.json({ success: true, data: updated.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(updated.recordset[0]) });
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid ProjectId or PreConManagerId' } });
@@ -2295,7 +2296,7 @@ export const listDealPipelineAttachments = async (req: Request, res: Response, n
         WHERE DealPipelineId = @dealPipelineId
         ORDER BY CreatedAt DESC
       `);
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -2353,7 +2354,7 @@ export const uploadDealPipelineAttachment = async (req: Request, res: Response, 
         OUTPUT INSERTED.DealPipelineAttachmentId, INSERTED.DealPipelineId, INSERTED.FileName, INSERTED.ContentType, INSERTED.FileSizeBytes, INSERTED.CreatedAt
         VALUES (@DealPipelineId, @FileName, @StoragePath, @ContentType, @FileSizeBytes)
       `);
-    res.status(201).json({ success: true, data: result.recordset[0] });
+    res.status(201).json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -2451,7 +2452,7 @@ export const updateDealPipelineAttachment = async (req: Request, res: Response, 
         FROM pipeline.DealPipelineAttachment
         WHERE DealPipelineAttachmentId = @id
       `);
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }

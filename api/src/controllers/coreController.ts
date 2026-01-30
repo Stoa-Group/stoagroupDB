@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sql from 'mssql';
 import { getConnection } from '../config/database';
 import { buildSelectQuery, buildInsertQuery, buildUpdateQuery, buildDeleteQuery } from '../utils/queryBuilder';
+import { normalizeState, normalizeStateInPayload } from '../utils/stateAbbrev';
 
 // ============================================================
 // PROJECT CONTROLLER
@@ -18,7 +19,7 @@ export const getAllProjects = async (req: Request, res: Response, next: NextFunc
       FROM core.Project 
       ORDER BY ProjectName
     `);
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -44,7 +45,7 @@ export const getProjectById = async (req: Request, res: Response, next: NextFunc
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -66,7 +67,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
     const insertResult = await pool.request()
       .input('ProjectName', sql.NVarChar, ProjectName)
       .input('City', sql.NVarChar, City)
-      .input('State', sql.NVarChar, State)
+      .input('State', sql.NVarChar, normalizeState(State))
       .input('Region', sql.NVarChar, Region)
       .input('Address', sql.NVarChar(500), Address)
       .input('Units', sql.Int, Units)
@@ -92,7 +93,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
         WHERE ProjectId = @id
       `);
 
-    res.status(201).json({ success: true, data: result.recordset[0] });
+    res.status(201).json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error: any) {
     if (error.number === 2627) { // Unique constraint violation
       res.status(409).json({ success: false, error: { message: 'Project with this name already exists' } });
@@ -120,6 +121,8 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
           request.input(key, sql.Int, projectData[key]);
         } else if (key === 'EstimatedConstructionStartDate') {
           request.input(key, sql.Date, projectData[key]);
+        } else if (key === 'State') {
+          request.input(key, sql.NVarChar, normalizeState(projectData[key]));
         } else {
           request.input(key, sql.NVarChar, projectData[key]);
         }
@@ -156,7 +159,7 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
         WHERE ProjectId = @id
       `);
 
-    res.json({ success: true, data: updated.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(updated.recordset[0]) });
   } catch (error: any) {
     if (error.number === 2627) {
       res.status(409).json({ success: false, error: { message: 'Project with this name already exists' } });
@@ -306,7 +309,7 @@ export const getAllBanks = async (req: Request, res: Response, next: NextFunctio
   try {
     const pool = await getConnection();
     const result = await pool.request().query('SELECT * FROM core.Bank ORDER BY BankName');
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -325,7 +328,7 @@ export const getBankById = async (req: Request, res: Response, next: NextFunctio
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -347,8 +350,8 @@ export const createBank = async (req: Request, res: Response, next: NextFunction
     const result = await pool.request()
       .input('BankName', sql.NVarChar, BankName)
       .input('City', sql.NVarChar, City)
-      .input('State', sql.NVarChar, State)
-      .input('HQState', sql.NVarChar, HQState)
+      .input('State', sql.NVarChar, normalizeState(State))
+      .input('HQState', sql.NVarChar, normalizeState(HQState))
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .input('HoldLimit', sql.Decimal(18, 2), HoldLimit)
       .input('PerDealLimit', sql.Decimal(18, 2), PerDealLimit)
@@ -386,6 +389,8 @@ export const updateBank = async (req: Request, res: Response, next: NextFunction
           request.input(key, sql.NVarChar(sql.MAX), bankData[key]);
         } else if (key === 'HoldLimit' || key === 'PerDealLimit' || key === 'Deposits') {
           request.input(key, sql.Decimal(18, 2), bankData[key]);
+        } else if (key === 'State' || key === 'HQState') {
+          request.input(key, sql.NVarChar, normalizeState(bankData[key]));
         } else {
           request.input(key, sql.NVarChar, bankData[key]);
         }
@@ -409,7 +414,7 @@ export const updateBank = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error: any) {
     if (error.number === 2627) {
       res.status(409).json({ success: false, error: { message: 'Bank with this name already exists' } });

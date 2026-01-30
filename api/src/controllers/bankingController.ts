@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sql from 'mssql';
 import { getConnection } from '../config/database';
+import { normalizeState, normalizeStateInPayload } from '../utils/stateAbbrev';
 
 // ============================================================
 // LOAN CONTROLLER
@@ -1943,7 +1944,7 @@ export const getAllBankTargets = async (req: Request, res: Response, next: NextF
       LEFT JOIN core.Bank b ON bt.BankId = b.BankId
       ORDER BY bt.BankTargetId
     `);
-    res.json({ success: true, data: result.recordset });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
   } catch (error) {
     next(error);
   }
@@ -1962,7 +1963,7 @@ export const getBankTargetById = async (req: Request, res: Response, next: NextF
       return;
     }
     
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error) {
     next(error);
   }
@@ -1982,7 +1983,7 @@ export const createBankTarget = async (req: Request, res: Response, next: NextFu
       .input('BankId', sql.Int, BankId)
       .input('AssetsText', sql.NVarChar, AssetsText)
       .input('City', sql.NVarChar, City)
-      .input('State', sql.NVarChar, State)
+      .input('State', sql.NVarChar, normalizeState(State))
       .input('ExposureWithStoa', sql.Decimal(18, 2), ExposureWithStoa)
       .input('ContactText', sql.NVarChar(4000), ContactText)
       .input('Comments', sql.NVarChar(sql.MAX), Comments)
@@ -1992,7 +1993,7 @@ export const createBankTarget = async (req: Request, res: Response, next: NextFu
         VALUES (@BankId, @AssetsText, @City, @State, @ExposureWithStoa, @ContactText, @Comments)
       `);
 
-    res.status(201).json({ success: true, data: result.recordset[0] });
+    res.status(201).json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error: any) {
     if (error.number === 2627) {
       res.status(409).json({ success: false, error: { message: 'Bank target for this bank already exists' } });
@@ -2017,7 +2018,7 @@ export const updateBankTarget = async (req: Request, res: Response, next: NextFu
       .input('BankId', sql.Int, BankId)
       .input('AssetsText', sql.NVarChar, AssetsText)
       .input('City', sql.NVarChar, City)
-      .input('State', sql.NVarChar, State)
+      .input('State', sql.NVarChar, normalizeState(State))
       .input('ExposureWithStoa', sql.Decimal(18, 2), ExposureWithStoa)
       .input('ContactText', sql.NVarChar(4000), ContactText)
       .input('Comments', sql.NVarChar(sql.MAX), Comments)
@@ -2034,7 +2035,7 @@ export const updateBankTarget = async (req: Request, res: Response, next: NextFu
       return;
     }
 
-    res.json({ success: true, data: result.recordset[0] });
+    res.json({ success: true, data: normalizeStateInPayload(result.recordset[0]) });
   } catch (error: any) {
     if (error.number === 547) {
       res.status(400).json({ success: false, error: { message: 'Invalid BankId' } });

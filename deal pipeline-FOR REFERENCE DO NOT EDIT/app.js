@@ -1406,7 +1406,7 @@ function calculateSummary(deals, excludeStart = true) {
         
         // Dates (exclude START deals from dates)
         if (stage !== 'START') {
-            const startDate = deal['Start Date'] || deal.startDate;
+            const startDate = deal['Start Date'] || deal.startDate || deal.StartDate || deal['Start Date Custom'];
             if (startDate) {
                 const date = new Date(startDate);
                 if (!isNaN(date.getTime())) {
@@ -1418,7 +1418,6 @@ function calculateSummary(deals, excludeStart = true) {
                         units: deal['Unit Count'] || deal.unitCount,
                         bank: deal.Bank || deal.bank
                     };
-                    
                     if (date >= new Date()) {
                         summary.upcomingDates.push(dateItem);
                     } else {

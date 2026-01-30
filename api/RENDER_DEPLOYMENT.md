@@ -93,6 +93,22 @@ https://stoagroup-api.onrender.com
 
 ---
 
+## 📋 Migrations to run on production
+
+After deploying code that uses **Latitude/Longitude** on deal pipeline, the production database must have those columns. Run this **once** on the same DB your Render API uses (e.g. Azure Portal → Query editor, or SSMS):
+
+```sql
+-- schema/add_deal_pipeline_latitude_longitude.sql
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'Latitude')
+  ALTER TABLE pipeline.DealPipeline ADD Latitude DECIMAL(18,8) NULL;
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'Longitude')
+  ALTER TABLE pipeline.DealPipeline ADD Longitude DECIMAL(18,8) NULL;
+```
+
+Until this is run, the API will return **Invalid column name 'Longitude'** (or 'Latitude') when loading deal pipelines.
+
+---
+
 ## 🔧 Configuration Details
 
 ### Build Command

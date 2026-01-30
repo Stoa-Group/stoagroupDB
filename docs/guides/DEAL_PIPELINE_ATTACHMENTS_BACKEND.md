@@ -17,6 +17,11 @@ Backend behavior and fixes for deal pipeline file attachments (list, upload, dow
 
 **So:** Uploads to Render are correct and go to Azure. The 404 you see is for attachment rows that were created by an environment that never uploaded to Azure (e.g. attach script run against a local API without Azure). Fix: run the attach scripts with `API_BASE_URL` pointing at your Render API so uploads go through Render and into the same Azure container Render uses for downloads.
 
+**Removing ghost attachment rows:** If you have many old rows whose blobs were never uploaded (e.g. from early attach runs), run the cleanup script so the DB only lists attachments that exist in Azure:
+
+- From `api/`: `npm run db:delete-ghost-attachments -- --dry-run` to list ghost rows only.
+- Then `npm run db:delete-ghost-attachments` to delete them. Requires `AZURE_STORAGE_*` and DB env vars (same as API).
+
 ---
 
 ## Endpoints

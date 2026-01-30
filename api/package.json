@@ -53,8 +53,12 @@
     "db:seed-site-tracking-carolinas": "npx ts-node --transpile-only scripts/seed-site-tracking-carolinas.ts",
     "db:attach-carolinas-files": "npx ts-node --transpile-only scripts/attach-carolinas-pipeline-files.ts",
     "db:attach-gulf-coast-files": "npx ts-node --transpile-only scripts/attach-gulf-coast-pipeline-files.ts",
+    "db:attach-all-pipeline-files": "npx ts-node --transpile-only scripts/attach-all-pipeline-files.ts",
+    "db:attach-from-smartsheet-csv": "npx ts-node --transpile-only scripts/attach-pipeline-files-from-smartsheet-csv.ts",
     "db:list-potential-duplicates": "npx ts-node --transpile-only scripts/list-potential-deal-duplicates.ts",
     "db:merge-duplicate-deals": "npx ts-node --transpile-only scripts/merge-duplicate-deals.ts",
+    "db:delete-ghost-attachments": "npx ts-node --transpile-only scripts/delete-ghost-attachments.ts",
+    "db:sync-deal-lat-long-from-kmz": "npx ts-node --transpile-only scripts/sync-deal-lat-long-from-kmz.ts",
     "extract-kmz-coordinates": "npx ts-node --transpile-only scripts/extract-kmz-coordinates.ts"
   },
   "keywords": [
