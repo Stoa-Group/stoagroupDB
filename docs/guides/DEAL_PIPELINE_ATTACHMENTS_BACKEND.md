@@ -21,18 +21,20 @@ Backend behavior and fixes for deal pipeline file attachments (list, upload, dow
 
 **Cause:** The server is using Node’s `crypto` (e.g. for hashing or signing) somewhere in the request chain without loading it. In Node there is **no global `crypto`** like in the browser; the built-in must be loaded explicitly.
 
-**Fix (backend):** In the file that handles:
+**Fix (backend):** Ensure the Node.js `crypto` module is loaded before any code that serves or signs file URLs runs.
 
-- `GET /api/pipeline/deal-pipeline/attachments/:id/download`
+1. **At app startup (recommended):** In your server entry point (e.g. `server.ts` or `app.js`), load crypto first:
+   - **CommonJS:** `require('crypto');`
+   - **ESM / TypeScript:** `import 'crypto';`
+   That way crypto is available for the whole process (including dependencies like the Azure Blob SDK).
 
-(or any helper that uses `crypto` for file serving/signing), ensure the Node.js `crypto` module is loaded at the top:
-
-- **CommonJS:** `const crypto = require('crypto');`
-- **ESM / TypeScript:** `import crypto from 'crypto';`
+2. **In the download handler file:** In the file that handles `GET /api/pipeline/deal-pipeline/attachments/:id/download`, also load crypto at the top:
+   - **CommonJS:** `const crypto = require('crypto');`
+   - **ESM / TypeScript:** `import crypto from 'crypto';`
 
 Use `crypto` only after it has been required/imported. Once that’s in place, View/Download should stop returning "crypto is not defined".
 
-**In this repo:** The pipeline controller that handles the download route has `import crypto from 'crypto'` at the top so the module is loaded when the controller is loaded.
+**In this repo:** The server entry point (`api/src/server.ts`) has `import 'crypto'` at the top so the module is loaded at startup. The pipeline controller also has `import crypto from 'crypto'` where the download route is implemented.
 
 ---
 

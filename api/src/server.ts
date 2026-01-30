@@ -1,3 +1,6 @@
+// Ensure Node.js crypto is loaded at startup (required for attachment download/signing and deps like Azure SDK)
+import 'crypto';
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
