@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sql from 'mssql';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { getConnection } from '../config/database';
 import { getFullPath, getRelativeStoragePath, buildStoragePath } from '../middleware/uploadMiddleware';
 import {

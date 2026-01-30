@@ -80,6 +80,45 @@ Use `api-client.js` and the Deal Pipeline API docs for the full list and for att
 
 ---
 
+## 7. "crypto is not defined" when viewing or downloading a file
+
+In some environments (e.g. Domo custom app, embedded iframe, or strict mode), the global **`crypto`** is not in scope. If your code or a library uses `crypto.randomUUID()` or `crypto.subtle` for view/download, you’ll see **"crypto is not defined"**.
+
+**Fix:** Use **`window.crypto`** (or **`globalThis.crypto`**) instead of bare `crypto`:
+
+```javascript
+// At top of script or before any use:
+const crypto = typeof window !== 'undefined' && window.crypto
+  ? window.crypto
+  : (typeof globalThis !== 'undefined' && globalThis.crypto ? globalThis.crypto : null);
+
+// Then use crypto for UUIDs (e.g. React keys, download links):
+if (crypto && crypto.randomUUID) {
+  const id = crypto.randomUUID();
+} else {
+  const id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/x/g, () => (Math.random() * 16 | 0).toString(16));
+}
+```
+
+For **downloading with auth:** don’t open the raw URL in a new tab (the tab won’t send your `Authorization` header). Use **fetch with the Bearer token**, then create a blob URL:
+
+```javascript
+async function downloadAttachment(attachmentId, token) {
+  const url = `${API_BASE_URL}/api/pipeline/deal-pipeline/attachments/${attachmentId}/download`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(res.statusText);
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = res.headers.get('Content-Disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'attachment';
+  a.click();
+  URL.revokeObjectURL(blobUrl);
+}
+```
+
+---
+
 ## Summary
 
 | Suggestion | What to do |
@@ -89,5 +128,6 @@ Use `api-client.js` and the Deal Pipeline API docs for the full list and for att
 | New stages | Add Under Review, Under Construction, Liquidated, Commercial Land - Listed, Rejected, Dead to config and order. |
 | Upcoming dates | Optional: use all date fields and show label + date; otherwise keep “Next 10” Start Date. |
 | Layout | Same stage order in overview and list; extend/scroll lists if needed. |
+| "crypto is not defined" on view/download | Use `window.crypto` or `globalThis.crypto`; download via fetch + Bearer token + blob URL. |
 
 Implement these in your **actual** frontend only; leave the `deal pipeline-FOR REFERENCE DO NOT EDIT/` folder unchanged.

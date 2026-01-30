@@ -72,6 +72,8 @@ After seeding, you can attach files from the pipeline file folders to the corres
 - **Carolinas:** `data/CAROLINASPIPELINEFILES` → `npm run db:attach-carolinas-files`
 - **Gulf Coast:** `data/GULFCOASTPIPELINEFILES` → `npm run db:attach-gulf-coast-files`
 
+The attach scripts use the **same env as the backend**: they load `api/.env` and use the API’s database config and Azure Blob config (`DB_*`, `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER`). Run from `api/` so `api/.env` is used.
+
 Filename-to-deal mapping is defined in the attach scripts; unmatched files are reported and can be ignored or mapped later.
 
 **Azure Blob (recommended for deploy):** Store the **Azure Storage key** (connection string) in your host’s environment — e.g. in **Render**: Environment → add **`AZURE_STORAGE_CONNECTION_STRING`** (from Azure Portal → Storage Account → Access keys → Connection string) and **`AZURE_STORAGE_CONTAINER`** (e.g. `deal-pipeline-attachments`). Do not put the connection string in code or Git. Then uploads and the attach scripts store files in Azure Blob, so they persist across redeploys. Run attach scripts locally with the same env vars so uploads go to the same container.

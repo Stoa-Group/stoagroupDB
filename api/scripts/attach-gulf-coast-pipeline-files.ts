@@ -15,6 +15,10 @@ import { randomUUID } from 'crypto';
 import sql from 'mssql';
 import dotenv from 'dotenv';
 import { isBlobStorageConfigured, uploadBufferToBlob, ensureContainerExists } from '../src/config/azureBlob';
+import { getConnection, closeConnection } from '../src/config/database';
+
+// Load backend env (same as API server: api/.env when run from api/)
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 const FILES_DIR = path.resolve(__dirname, '../../data/GULFCOASTPIPELINEFILES');
 /** Same base as API (api/uploads) so download endpoint finds files. */
@@ -110,30 +114,6 @@ const FILE_TO_PROJECT_NAME: { patterns: string[]; projectName: string }[] = [
   { patterns: ['WANG_WetlandsExhibit', 'WetlandsExhibit'], projectName: 'Waters at Freeport Phase II' },
 ];
 
-// Load .env
-const possibleEnvPaths = [
-  path.resolve(process.cwd(), '.env'),
-  path.resolve(__dirname, '../../.env'),
-];
-for (const p of possibleEnvPaths) {
-  if (fs.existsSync(p)) {
-    dotenv.config({ path: p });
-    break;
-  }
-}
-
-const dbConfig: sql.config = {
-  server: process.env.DB_SERVER || '',
-  database: process.env.DB_DATABASE || '',
-  user: process.env.DB_USER || '',
-  password: process.env.DB_PASSWORD || '',
-  options: {
-    encrypt: process.env.DB_ENCRYPT === 'true',
-    trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true',
-    enableArithAbort: true,
-  },
-  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
-};
 
 function getDealPipelineUploadDir(dealPipelineId: number): string {
   const dir = path.join(UPLOAD_DIR, DEAL_PIPELINE_SUBDIR, String(dealPipelineId));
@@ -174,7 +154,7 @@ async function main() {
     process.exit(1);
   }
 
-  const pool = await sql.connect(dbConfig);
+  const pool = await getConnection();
   const dealsResult = await pool.request().query(`
     SELECT dp.DealPipelineId, p.ProjectName
     FROM pipeline.DealPipeline dp
@@ -257,7 +237,7 @@ async function main() {
     }
   }
 
-  await pool.close();
+  await closeConnection();
   console.log('\n---');
   console.log(`Attached: ${uploaded} files`);
   console.log(`Errors: ${errors}`);
