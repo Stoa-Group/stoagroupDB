@@ -1,5 +1,11 @@
 # Audit Tracking System Guide
 
+## Database change policy
+
+**All database changes** (schema, migrations, bulk data) must be documented with **who** made the change, **when**, and **what** changed (from → to). Use **`docs/DB_CHANGELOG.md`** for that. Row-level data changes are tracked automatically in `audit.AuditLog` and history tables (who/when/what per column or record).
+
+---
+
 ## Overview
 
 The audit tracking system automatically captures all changes to your database, allowing you to:

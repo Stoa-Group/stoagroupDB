@@ -1,0 +1,45 @@
+# Database change log
+
+**Requirement:** Every change to the database (schema, migrations, bulk data, or config) must be recorded here with **who** made the change, **when**, and **what** changed (from → to).
+
+---
+
+## How to log a change
+
+When you run any script or migration that changes the DB, add one entry to the table below (copy the row, fill it in, insert at the top under “Recent changes”).
+
+| When (UTC) | Who | What changed | From → To | Script / How |
+|------------|-----|--------------|-----------|--------------|
+| 2025-01-XX | | | | |
+
+- **When:** Date (and time if useful) of the change, UTC.
+- **Who:** Person making the change (e.g. `arovner`, `mmurray`, or full name).
+- **What changed:** Short description of what was changed.
+- **From → To:** For schema/data: previous state → new state (e.g. “Added columns …”, “Stage values: X → Y”).
+- **Script / How:** Script name (e.g. `schema/add_deal_pipeline_site_tracking_columns.sql`) or “Manual in SSMS”, “API deployment”, etc.
+
+---
+
+## Recent changes
+
+| When (UTC) | Who | What changed | From → To | Script / How |
+|------------|-----|--------------|-----------|--------------|
+| *(example)* | *(who)* | Deal pipeline site tracking columns | pipeline.DealPipeline had no County/ZipCode/… → Added County, ZipCode, MFAcreage, Zoning, Zoned, ListingStatus, BrokerReferralSource, RejectedReason | schema/add_deal_pipeline_site_tracking_columns.sql |
+
+*(Insert new rows above this line. Replace the example row with real entries when you run migrations.)*
+
+---
+
+## Row-level “who / when / what” (data changes)
+
+- **Data** changes (INSERT/UPDATE/DELETE) are tracked in **audit tables**:
+  - `audit.AuditLog` – column-level: TableName, RecordId, ColumnName, ChangeType, OldValue, NewValue, **ChangedBy**, **ChangedAt**.
+  - History tables (e.g. `audit.ProjectHistory`, `audit.LoanHistory`) – full row snapshots and **ChangedBy** / **ValidFrom**.
+- Triggers populate **ChangedBy** / **ChangedAt**; today **ChangedBy** is the DB login (e.g. app account). To record the **human user** (e.g. Domo/API user), the API would need to set `SESSION_CONTEXT` or write to audit with `req.user`; see `audit/09_audit_tracking_guide.md` and `audit/12_audit_tracking_guide.md`.
+
+---
+
+## Schema / migration “who / when / what”
+
+- **Schema and one-off migrations** are documented **only in this changelog**.
+- Before or right after running any DDL or migration script, add a row above with who, when, what (from → to), and the script name.

@@ -454,6 +454,16 @@ CREATE TABLE pipeline.DealPipeline (
     OpportunityZone BIT NULL,
     ClosingNotes NVARCHAR(MAX) NULL,
     
+    -- Site Tracking Worksheet fields (deal pipeline tracked data points)
+    County NVARCHAR(100) NULL,
+    ZipCode NVARCHAR(20) NULL,
+    MFAcreage DECIMAL(18,4) NULL,
+    Zoning NVARCHAR(100) NULL,
+    Zoned NVARCHAR(20) NULL,           -- Yes, No, Partially
+    ListingStatus NVARCHAR(50) NULL,   -- Listed, Unlisted
+    BrokerReferralSource NVARCHAR(255) NULL,
+    RejectedReason NVARCHAR(500) NULL,
+    
     -- Asana metadata
     AsanaTaskGid NVARCHAR(100) NULL,
     AsanaProjectGid NVARCHAR(100) NULL,
@@ -473,6 +483,21 @@ CREATE INDEX IX_DealPipeline_Bank ON pipeline.DealPipeline(Bank);
 CREATE INDEX IX_DealPipeline_PreConManagerId ON pipeline.DealPipeline(PreConManagerId);
 CREATE INDEX IX_DealPipeline_StartDate ON pipeline.DealPipeline(StartDate);
 CREATE INDEX IX_DealPipeline_AsanaTaskGid ON pipeline.DealPipeline(AsanaTaskGid);
+
+-- ============================================================
+-- PIPELINE: DEAL PIPELINE ATTACHMENTS (files attached to deals)
+-- ============================================================
+CREATE TABLE pipeline.DealPipelineAttachment (
+    DealPipelineAttachmentId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_DealPipelineAttachment PRIMARY KEY,
+    DealPipelineId INT NOT NULL,
+    FileName NVARCHAR(255) NOT NULL,
+    StoragePath NVARCHAR(1000) NOT NULL,
+    ContentType NVARCHAR(100) NULL,
+    FileSizeBytes BIGINT NULL,
+    CreatedAt DATETIME2(0) NOT NULL DEFAULT SYSDATETIME(),
+    CONSTRAINT FK_DPA_DealPipeline FOREIGN KEY (DealPipelineId) REFERENCES pipeline.DealPipeline(DealPipelineId) ON DELETE CASCADE
+);
+CREATE INDEX IX_DealPipelineAttachment_DealPipelineId ON pipeline.DealPipelineAttachment(DealPipelineId);
 
 PRINT 'Schema created successfully. ProjectID is now the source of truth.';
 

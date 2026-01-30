@@ -1,0 +1,22 @@
+-- Add Site Tracking Worksheet columns to pipeline.DealPipeline
+-- Run on existing DBs so deal pipeline tracks all worksheet data points.
+SET NOCOUNT ON;
+
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'County')
+  ALTER TABLE pipeline.DealPipeline ADD County NVARCHAR(100) NULL;
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'ZipCode')
+  ALTER TABLE pipeline.DealPipeline ADD ZipCode NVARCHAR(20) NULL;
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'MFAcreage')
+  ALTER TABLE pipeline.DealPipeline ADD MFAcreage DECIMAL(18,4) NULL;
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'Zoning')
+  ALTER TABLE pipeline.DealPipeline ADD Zoning NVARCHAR(100) NULL;
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'Zoned')
+  ALTER TABLE pipeline.DealPipeline ADD Zoned NVARCHAR(20) NULL;
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'ListingStatus')
+  ALTER TABLE pipeline.DealPipeline ADD ListingStatus NVARCHAR(50) NULL;
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'BrokerReferralSource')
+  ALTER TABLE pipeline.DealPipeline ADD BrokerReferralSource NVARCHAR(255) NULL;
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'pipeline' AND TABLE_NAME = 'DealPipeline' AND COLUMN_NAME = 'RejectedReason')
+  ALTER TABLE pipeline.DealPipeline ADD RejectedReason NVARCHAR(500) NULL;
+
+PRINT 'Deal pipeline site tracking columns added.';

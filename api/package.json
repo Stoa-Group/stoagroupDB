@@ -47,7 +47,10 @@
     "db:update-holdco-stage": "npx ts-node --transpile-only scripts/update-holdco-stage.ts",
     "db:add-is-completed-to-covenants": "npx ts-node --transpile-only scripts/add-is-completed-to-covenants.ts",
     "db:test-covenants": "npx ts-node --transpile-only scripts/test-covenants.ts",
-    "db:sync-io-maturity-covenants": "npx ts-node --transpile-only scripts/sync-io-maturity-covenants.ts"
+    "db:sync-io-maturity-covenants": "npx ts-node --transpile-only scripts/sync-io-maturity-covenants.ts",
+    "db:add-deal-pipeline-site-tracking-columns": "npx ts-node --transpile-only scripts/add-deal-pipeline-site-tracking-columns.ts",
+    "db:seed-site-tracking-gulf-coast": "npx ts-node --transpile-only scripts/seed-site-tracking-gulf-coast.ts",
+    "db:seed-site-tracking-carolinas": "npx ts-node --transpile-only scripts/seed-site-tracking-carolinas.ts"
   },
   "keywords": ["api", "rest", "azure-sql"],
   "author": "",
@@ -59,7 +62,8 @@
     "cors": "^2.8.5",
     "helmet": "^7.1.0",
     "bcrypt": "^5.1.1",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
@@ -69,6 +73,7 @@
     "@types/xlsx": "^0.0.36",
     "@types/bcrypt": "^5.0.2",
     "@types/jsonwebtoken": "^9.0.5",
+    "@types/multer": "^1.4.11",
     "typescript": "^5.3.3",
     "ts-node-dev": "^2.0.0",
     "ts-node": "^10.9.2",

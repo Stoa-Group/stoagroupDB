@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as pipelineController from '../controllers/pipelineController';
+import { dealPipelineAttachmentUpload } from '../middleware/uploadMiddleware';
 
 const router = Router();
 
@@ -37,6 +38,11 @@ router.delete('/closed-properties/:id', pipelineController.deleteClosedProperty)
 // Deal Pipeline routes (Land Development Deal Tracker)
 router.get('/deal-pipeline', pipelineController.getAllDealPipelines);
 router.get('/deal-pipeline/project/:projectId', pipelineController.getDealPipelineByProjectId); // Get by ProjectId (must come before /:id)
+// Attachments (more specific paths first)
+router.get('/deal-pipeline/attachments/:attachmentId/download', pipelineController.downloadDealPipelineAttachment);
+router.delete('/deal-pipeline/attachments/:attachmentId', pipelineController.deleteDealPipelineAttachment);
+router.get('/deal-pipeline/:id/attachments', pipelineController.listDealPipelineAttachments);
+router.post('/deal-pipeline/:id/attachments', dealPipelineAttachmentUpload.single('file'), pipelineController.uploadDealPipelineAttachment);
 router.get('/deal-pipeline/:id', pipelineController.getDealPipelineById);
 router.post('/deal-pipeline', pipelineController.createDealPipeline);
 router.put('/deal-pipeline/:id', pipelineController.updateDealPipeline);

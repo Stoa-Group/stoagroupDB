@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import sql from 'mssql';
+import fs from 'fs';
+import path from 'path';
 import { getConnection } from '../config/database';
+import { getFullPath, getRelativeStoragePath } from '../middleware/uploadMiddleware';
 
 // ============================================================
 // UNDER CONTRACT CONTROLLER
@@ -1440,6 +1443,14 @@ export const getAllDealPipelines = async (req: Request, res: Response, next: Nex
         dp.Cash,
         dp.OpportunityZone,
         dp.ClosingNotes,
+        dp.County,
+        dp.ZipCode,
+        dp.MFAcreage,
+        dp.Zoning,
+        dp.Zoned,
+        dp.ListingStatus,
+        dp.BrokerReferralSource,
+        dp.RejectedReason,
         dp.AsanaTaskGid,
         dp.AsanaProjectGid,
         dp.CreatedAt,
@@ -1499,6 +1510,14 @@ export const getDealPipelineById = async (req: Request, res: Response, next: Nex
           dp.Cash,
           dp.OpportunityZone,
           dp.ClosingNotes,
+          dp.County,
+          dp.ZipCode,
+          dp.MFAcreage,
+          dp.Zoning,
+          dp.Zoned,
+          dp.ListingStatus,
+          dp.BrokerReferralSource,
+          dp.RejectedReason,
           dp.AsanaTaskGid,
           dp.AsanaProjectGid,
           dp.CreatedAt,
@@ -1564,6 +1583,14 @@ export const getDealPipelineByProjectId = async (req: Request, res: Response, ne
           dp.Cash,
           dp.OpportunityZone,
           dp.ClosingNotes,
+          dp.County,
+          dp.ZipCode,
+          dp.MFAcreage,
+          dp.Zoning,
+          dp.Zoned,
+          dp.ListingStatus,
+          dp.BrokerReferralSource,
+          dp.RejectedReason,
           dp.AsanaTaskGid,
           dp.AsanaProjectGid,
           dp.CreatedAt,
@@ -1617,7 +1644,15 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
       OpportunityZone,
       ClosingNotes,
       AsanaTaskGid,
-      AsanaProjectGid
+      AsanaProjectGid,
+      County,
+      ZipCode,
+      MFAcreage,
+      Zoning,
+      Zoned,
+      ListingStatus,
+      BrokerReferralSource,
+      RejectedReason
     } = req.body;
 
     const pool = await getConnection();
@@ -1755,6 +1790,14 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
       .input('Cash', sql.Bit, Cash)
       .input('OpportunityZone', sql.Bit, OpportunityZone)
       .input('ClosingNotes', sql.NVarChar(sql.MAX), ClosingNotes)
+      .input('County', sql.NVarChar(100), County)
+      .input('ZipCode', sql.NVarChar(20), ZipCode)
+      .input('MFAcreage', sql.Decimal(18, 4), MFAcreage)
+      .input('Zoning', sql.NVarChar(100), Zoning)
+      .input('Zoned', sql.NVarChar(20), Zoned)
+      .input('ListingStatus', sql.NVarChar(50), ListingStatus)
+      .input('BrokerReferralSource', sql.NVarChar(255), BrokerReferralSource)
+      .input('RejectedReason', sql.NVarChar(500), RejectedReason)
       .input('AsanaTaskGid', sql.NVarChar(100), AsanaTaskGid)
       .input('AsanaProjectGid', sql.NVarChar(100), AsanaProjectGid)
       .query(`
@@ -1765,6 +1808,7 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
             ConstructionLoanClosingDate, Notes, Priority, Acreage, LandPrice,
             SqFtPrice, ExecutionDate, DueDiligenceDate, ClosingDate,
             PurchasingEntity, Cash, OpportunityZone, ClosingNotes,
+            County, ZipCode, MFAcreage, Zoning, Zoned, ListingStatus, BrokerReferralSource, RejectedReason,
             AsanaTaskGid, AsanaProjectGid
           )
           VALUES (
@@ -1772,6 +1816,7 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
             @ConstructionLoanClosingDate, @Notes, @Priority, @Acreage, @LandPrice,
             @SqFtPrice, @ExecutionDate, @DueDiligenceDate, @ClosingDate,
             @PurchasingEntity, @Cash, @OpportunityZone, @ClosingNotes,
+            @County, @ZipCode, @MFAcreage, @Zoning, @Zoned, @ListingStatus, @BrokerReferralSource, @RejectedReason,
             @AsanaTaskGid, @AsanaProjectGid
           );
         END
@@ -1813,6 +1858,14 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
           dp.Cash,
           dp.OpportunityZone,
           dp.ClosingNotes,
+          dp.County,
+          dp.ZipCode,
+          dp.MFAcreage,
+          dp.Zoning,
+          dp.Zoned,
+          dp.ListingStatus,
+          dp.BrokerReferralSource,
+          dp.RejectedReason,
           dp.AsanaTaskGid,
           dp.AsanaProjectGid,
           dp.CreatedAt,
@@ -1874,7 +1927,15 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
       OpportunityZone,
       ClosingNotes,
       AsanaTaskGid,
-      AsanaProjectGid
+      AsanaProjectGid,
+      County,
+      ZipCode,
+      MFAcreage,
+      Zoning,
+      Zoned,
+      ListingStatus,
+      BrokerReferralSource,
+      RejectedReason
     } = req.body;
 
     const pool = await getConnection();
@@ -2022,6 +2083,38 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
       fields.push('AsanaProjectGid = @AsanaProjectGid');
       request.input('AsanaProjectGid', sql.NVarChar(100), AsanaProjectGid);
     }
+    if (County !== undefined) {
+      fields.push('County = @County');
+      request.input('County', sql.NVarChar(100), County);
+    }
+    if (ZipCode !== undefined) {
+      fields.push('ZipCode = @ZipCode');
+      request.input('ZipCode', sql.NVarChar(20), ZipCode);
+    }
+    if (MFAcreage !== undefined) {
+      fields.push('MFAcreage = @MFAcreage');
+      request.input('MFAcreage', sql.Decimal(18, 4), MFAcreage);
+    }
+    if (Zoning !== undefined) {
+      fields.push('Zoning = @Zoning');
+      request.input('Zoning', sql.NVarChar(100), Zoning);
+    }
+    if (Zoned !== undefined) {
+      fields.push('Zoned = @Zoned');
+      request.input('Zoned', sql.NVarChar(20), Zoned);
+    }
+    if (ListingStatus !== undefined) {
+      fields.push('ListingStatus = @ListingStatus');
+      request.input('ListingStatus', sql.NVarChar(50), ListingStatus);
+    }
+    if (BrokerReferralSource !== undefined) {
+      fields.push('BrokerReferralSource = @BrokerReferralSource');
+      request.input('BrokerReferralSource', sql.NVarChar(255), BrokerReferralSource);
+    }
+    if (RejectedReason !== undefined) {
+      fields.push('RejectedReason = @RejectedReason');
+      request.input('RejectedReason', sql.NVarChar(500), RejectedReason);
+    }
 
     // Recalculate SqFtPrice if LandPrice or Acreage changed
     if (LandPrice !== undefined || Acreage !== undefined) {
@@ -2093,6 +2186,14 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
           dp.Cash,
           dp.OpportunityZone,
           dp.ClosingNotes,
+          dp.County,
+          dp.ZipCode,
+          dp.MFAcreage,
+          dp.Zoning,
+          dp.Zoned,
+          dp.ListingStatus,
+          dp.BrokerReferralSource,
+          dp.RejectedReason,
           dp.AsanaTaskGid,
           dp.AsanaProjectGid,
           dp.CreatedAt,
@@ -2133,6 +2234,138 @@ export const deleteDealPipeline = async (req: Request, res: Response, next: Next
     }
 
     res.json({ success: true, message: 'Deal Pipeline record deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================================
+// DEAL PIPELINE ATTACHMENTS (file uploads per deal)
+// ============================================================
+
+export const listDealPipelineAttachments = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = req.params.id;
+    const dealPipelineId = parseInt(id, 10);
+    if (isNaN(dealPipelineId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid deal pipeline id' } });
+      return;
+    }
+    const pool = await getConnection();
+    const exists = await pool.request()
+      .input('id', sql.Int, dealPipelineId)
+      .query('SELECT 1 FROM pipeline.DealPipeline WHERE DealPipelineId = @id');
+    if (exists.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Deal Pipeline record not found' } });
+      return;
+    }
+    const result = await pool.request()
+      .input('dealPipelineId', sql.Int, dealPipelineId)
+      .query(`
+        SELECT DealPipelineAttachmentId, DealPipelineId, FileName, ContentType, FileSizeBytes, CreatedAt
+        FROM pipeline.DealPipelineAttachment
+        WHERE DealPipelineId = @dealPipelineId
+        ORDER BY CreatedAt DESC
+      `);
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const uploadDealPipelineAttachment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = req.params.id;
+    const dealPipelineId = parseInt(id, 10);
+    if (isNaN(dealPipelineId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid deal pipeline id' } });
+      return;
+    }
+    const file = (req as Request & { file?: { path: string; originalname?: string; mimetype?: string; size?: number } }).file;
+    if (!file || !file.path) {
+      res.status(400).json({ success: false, error: { message: 'No file uploaded; use multipart field "file"' } });
+      return;
+    }
+    const pool = await getConnection();
+    const exists = await pool.request()
+      .input('id', sql.Int, dealPipelineId)
+      .query('SELECT 1 FROM pipeline.DealPipeline WHERE DealPipelineId = @id');
+    if (exists.recordset.length === 0) {
+      try { fs.unlinkSync(file.path); } catch (_) {}
+      res.status(404).json({ success: false, error: { message: 'Deal Pipeline record not found' } });
+      return;
+    }
+    const storagePath = getRelativeStoragePath(file.path);
+    const result = await pool.request()
+      .input('DealPipelineId', sql.Int, dealPipelineId)
+      .input('FileName', sql.NVarChar(255), file.originalname || path.basename(file.path))
+      .input('StoragePath', sql.NVarChar(1000), storagePath)
+      .input('ContentType', sql.NVarChar(100), file.mimetype || null)
+      .input('FileSizeBytes', sql.BigInt, file.size ?? null)
+      .query(`
+        INSERT INTO pipeline.DealPipelineAttachment (DealPipelineId, FileName, StoragePath, ContentType, FileSizeBytes)
+        OUTPUT INSERTED.DealPipelineAttachmentId, INSERTED.DealPipelineId, INSERTED.FileName, INSERTED.ContentType, INSERTED.FileSizeBytes, INSERTED.CreatedAt
+        VALUES (@DealPipelineId, @FileName, @StoragePath, @ContentType, @FileSizeBytes)
+      `);
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const downloadDealPipelineAttachment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const attachmentId = req.params.attachmentId;
+    const id = parseInt(attachmentId, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid attachment id' } });
+      return;
+    }
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT FileName, StoragePath, ContentType FROM pipeline.DealPipelineAttachment WHERE DealPipelineAttachmentId = @id');
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Attachment not found' } });
+      return;
+    }
+    const row = result.recordset[0];
+    const fullPath = getFullPath(row.StoragePath);
+    if (!fs.existsSync(fullPath)) {
+      res.status(404).json({ success: false, error: { message: 'File not found on server' } });
+      return;
+    }
+    const contentType = row.ContentType || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(row.FileName)}"`);
+    res.sendFile(path.resolve(fullPath));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteDealPipelineAttachment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const attachmentId = req.params.attachmentId;
+    const id = parseInt(attachmentId, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid attachment id' } });
+      return;
+    }
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT StoragePath FROM pipeline.DealPipelineAttachment WHERE DealPipelineAttachmentId = @id');
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Attachment not found' } });
+      return;
+    }
+    const fullPath = getFullPath(result.recordset[0].StoragePath);
+    await pool.request().input('id', sql.Int, id).query('DELETE FROM pipeline.DealPipelineAttachment WHERE DealPipelineAttachmentId = @id');
+    try {
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    } catch (_) {}
+    res.json({ success: true, message: 'Attachment deleted' });
   } catch (error) {
     next(error);
   }
