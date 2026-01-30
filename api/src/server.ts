@@ -56,6 +56,7 @@ app.get('/api', (req: Request, res: Response) => {
     endpoints: {
       auth: {
         login: 'POST /api/auth/login',
+        domo: 'POST /api/auth/domo (Domo SSO: body: { email (required), name? })',
         verify: 'GET /api/auth/verify (requires Bearer token)',
         me: 'GET /api/auth/me (requires Bearer token)',
       },

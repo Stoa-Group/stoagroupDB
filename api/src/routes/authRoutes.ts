@@ -6,6 +6,7 @@ const router = Router();
 
 // Public routes
 router.post('/login', authController.login);
+router.post('/domo', authController.domoSso);
 
 // Protected routes (require authentication)
 router.get('/verify', authenticate, authController.verify);

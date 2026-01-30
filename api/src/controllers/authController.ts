@@ -112,6 +112,89 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
 };
 
 /**
+ * Domo SSO endpoint - sign in with email only (no password).
+ * POST /api/auth/domo
+ * Body: { email: string (required), name?: string } — userId optional if sent by Domo.
+ * Returns same shape as login so front end can store token and user; JWT grants access to deal pipeline.
+ */
+export const domoSso = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { email, name } = req.body;
+
+    const emailVal = typeof email === 'string' ? email.trim() : '';
+    if (!emailVal) {
+      res.status(400).json({
+        success: false,
+        error: { message: 'email is required' }
+      });
+      return;
+    }
+
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('email', sql.NVarChar, emailVal)
+      .query(`
+        SELECT UserId, Username, Email, FullName, IsActive
+        FROM auth.[User]
+        WHERE LOWER(Email) = LOWER(@email)
+      `);
+
+    if (result.recordset.length === 0) {
+      res.status(403).json({
+        success: false,
+        error: { message: 'User not authorized for Deal Pipeline' }
+      });
+      return;
+    }
+
+    const user = result.recordset[0];
+
+    if (!user.IsActive) {
+      res.status(403).json({
+        success: false,
+        error: { message: 'Account is inactive' }
+      });
+      return;
+    }
+
+    // Update last login
+    await pool.request()
+      .input('userId', sql.Int, user.UserId)
+      .query(`
+        UPDATE auth.[User]
+        SET LastLoginAt = SYSDATETIME()
+        WHERE UserId = @userId
+      `);
+
+    // Same JWT as login (same claims, secret, expiry)
+    const token = jwt.sign(
+      {
+        userId: user.UserId,
+        username: user.Username,
+        email: user.Email
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions
+    );
+
+    res.json({
+      success: true,
+      data: {
+        token,
+        user: {
+          userId: user.UserId,
+          username: user.Username,
+          email: user.Email,
+          fullName: user.FullName ?? name ?? undefined
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Verify token endpoint - validates JWT token
  * GET /api/auth/verify
  * Headers: Authorization: Bearer <token>

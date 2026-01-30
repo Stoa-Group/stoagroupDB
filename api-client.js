@@ -652,10 +652,8 @@
  * @param {string} [data.ProjectedInterestRate] - Projected interest rate
  * @param {number} [data.Requirement] - DSCR requirement (e.g., 1.25)
  * @param {string} [data.ProjectedValue] - Projected DSCR value
- * @param {boolean} [data.IsCompleted] - Completion status (defaults to false)
  * @returns {Promise<object>} { success: true, data: {...} }
  * @note FinancingType separates Construction vs Permanent financing data
- * @note IsCompleted: boolean toggle to track if the DSCR test has been completed
  */
   async function createDSCRTest(data) {
   return apiRequest('/api/banking/dscr-tests', 'POST', data);
@@ -889,22 +887,17 @@
 /**
  * Create a new covenant (REQUIRES AUTHENTICATION)
  * 
- * CovenantType options: 'DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Loan Maturity', 'Permanent Loan Maturity', 'Mini-Perm Maturity', 'Perm Phase Maturity', 'Other'
+ * CovenantType options: 'DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'
  * 
  * Fields vary by CovenantType:
  * - DSCR: DSCRTestDate (Date), ProjectedInterestRate (string), DSCRRequirement (string), ProjectedDSCR (string)
  * - Occupancy: OccupancyCovenantDate (Date), OccupancyRequirement (string), ProjectedOccupancy (string, e.g., "76.5%")
  * - Liquidity Requirement: LiquidityRequirementLendingBank (number/decimal)
- * - I/O Maturity: CovenantDate (Date), Requirement (string) - Auto-created when Construction loan has IOMaturityDate
- * - Loan Maturity: CovenantDate (Date), Requirement (string) - Auto-created when loan has MaturityDate
- * - Permanent Loan Maturity: CovenantDate (Date), Requirement (string) - Auto-created when Permanent loan has MaturityDate
- * - Mini-Perm Maturity: CovenantDate (Date), Requirement (string) - Auto-created when loan has MiniPermMaturity
- * - Perm Phase Maturity: CovenantDate (Date), Requirement (string) - Auto-created when loan has PermPhaseMaturity
  * - Other: CovenantDate (Date), Requirement (string), ProjectedValue (string)
  * 
  * @param {object} data - { 
  *   ProjectId (required), 
- *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'I/O Maturity' | 'Loan Maturity' | 'Permanent Loan Maturity' | 'Mini-Perm Maturity' | 'Perm Phase Maturity' | 'Other'),
+ *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'Other'),
  *   FinancingType? ('Construction' | 'Permanent', defaults to 'Construction'),
  *   LoanId?,
  *   // DSCR fields:
@@ -915,12 +908,10 @@
  *   LiquidityRequirementLendingBank?,
  *   // Other fields:
  *   CovenantDate?, Requirement?, ProjectedValue?,
- *   Notes?,
- *   IsCompleted? (boolean, defaults to false)
+ *   Notes?
  * }
  * @returns {Promise<object>} { success: true, data: {...} }
  * @note FinancingType separates Construction vs Permanent financing data
- * @note IsCompleted: boolean toggle to track if the covenant has been completed
  * 
  * @example
  * // Create a DSCR covenant
@@ -959,22 +950,17 @@
  * Create covenant by Project ID (REQUIRES AUTHENTICATION)
  * Automatically finds the construction loan for the project
  * 
- * CovenantType options: 'DSCR', 'Occupancy', 'Liquidity Requirement', 'I/O Maturity', 'Loan Maturity', 'Permanent Loan Maturity', 'Mini-Perm Maturity', 'Perm Phase Maturity', 'Other'
+ * CovenantType options: 'DSCR', 'Occupancy', 'Liquidity Requirement', 'Other'
  * 
  * Fields vary by CovenantType:
  * - DSCR: DSCRTestDate (Date), ProjectedInterestRate (string), DSCRRequirement (string), ProjectedDSCR (string)
  * - Occupancy: OccupancyCovenantDate (Date), OccupancyRequirement (string), ProjectedOccupancy (string, e.g., "76.5%")
  * - Liquidity Requirement: LiquidityRequirementLendingBank (number/decimal)
- * - I/O Maturity: CovenantDate (Date), Requirement (string) - Auto-created when Construction loan has IOMaturityDate
- * - Loan Maturity: CovenantDate (Date), Requirement (string) - Auto-created when loan has MaturityDate
- * - Permanent Loan Maturity: CovenantDate (Date), Requirement (string) - Auto-created when Permanent loan has MaturityDate
- * - Mini-Perm Maturity: CovenantDate (Date), Requirement (string) - Auto-created when loan has MiniPermMaturity
- * - Perm Phase Maturity: CovenantDate (Date), Requirement (string) - Auto-created when loan has PermPhaseMaturity
  * - Other: CovenantDate (Date), Requirement (string), ProjectedValue (string)
  * 
  * @param {number} projectId - Project ID
  * @param {object} data - { 
- *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'I/O Maturity' | 'Loan Maturity' | 'Permanent Loan Maturity' | 'Mini-Perm Maturity' | 'Perm Phase Maturity' | 'Other'),
+ *   CovenantType (required: 'DSCR' | 'Occupancy' | 'Liquidity Requirement' | 'Other'),
  *   // DSCR fields:
  *   DSCRTestDate?, ProjectedInterestRate?, DSCRRequirement?, ProjectedDSCR?,
  *   // Occupancy fields:
@@ -983,11 +969,9 @@
  *   LiquidityRequirementLendingBank?,
  *   // Other fields:
  *   CovenantDate?, Requirement?, ProjectedValue?,
- *   Notes?,
- *   IsCompleted? (boolean, defaults to false)
+ *   Notes?
  * }
  * @returns {Promise<object>} { success: true, data: {...} }
- * @note IsCompleted: boolean toggle to track if the covenant has been completed
  * 
  * @example
  * // Create a DSCR covenant for a project
@@ -1005,17 +989,8 @@
 
 /**
  * Update a covenant (REQUIRES AUTHENTICATION)
- * 
- * When updating IsCompleted to true, you can optionally add a note:
- * @example
- * // Mark covenant as completed with a note
- * await updateCovenant(1, {
- *   IsCompleted: true,
- *   Notes: 'Completed on 2025-01-15. All requirements met.'
- * });
- * 
  * @param {number} id - Covenant ID
- * @param {object} data - Updated covenant data (IsCompleted, Notes, etc.)
+ * @param {object} data - Updated covenant data
  * @returns {Promise<object>} { success: true, data: {...} }
  */
   async function updateCovenant(id, data) {
@@ -1067,10 +1042,8 @@
  * @param {number} [data.TotalAmount] - Total amount
  * @param {number} [data.LendingBankAmount] - Lending bank amount
  * @param {string} [data.Notes] - Notes
- * @param {boolean} [data.IsCompleted] - Completion status (defaults to false)
  * @returns {Promise<object>} { success: true, data: {...} }
  * @note FinancingType separates Construction vs Permanent financing data
- * @note IsCompleted: boolean toggle to track if the liquidity requirement has been completed
  */
   async function createLiquidityRequirement(data) {
   return apiRequest('/api/banking/liquidity-requirements', 'POST', data);

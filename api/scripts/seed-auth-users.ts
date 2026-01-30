@@ -74,7 +74,20 @@ const dbConfig: sql.config = {
   },
 };
 
+// Admin users recognized for Domo SSO and deal pipeline access
 const users = [
+  {
+    username: 'bbrinson@stoagroup.com',
+    password: 'CapitalMarkets26',
+    email: 'bbrinson@stoagroup.com',
+    fullName: 'B Brinson'
+  },
+  {
+    username: 'hspring@stoagroup.com',
+    password: 'LandDevelopment26',
+    email: 'hspring@stoagroup.com',
+    fullName: 'H Spring'
+  },
   {
     username: 'arovner@stoagroup.com',
     password: 'CapitalMarkets26',
@@ -82,16 +95,10 @@ const users = [
     fullName: 'Alec Rovner'
   },
   {
-    username: 'Mmurray@stoagroup.com',
+    username: 'mmurray@stoagroup.com',
     password: 'CapitalMarkets26',
-    email: 'Mmurray@stoagroup.com',
+    email: 'mmurray@stoagroup.com',
     fullName: 'M Murray'
-  },
-  {
-    username: 'hspring@stoagroup.com',
-    password: 'LandDevelopment26',
-    email: 'hspring@stoagroup.com',
-    fullName: 'H Spring'
   }
 ];
 
@@ -117,17 +124,25 @@ async function seedUsers() {
     }
 
     for (const userData of users) {
-      // Check if user already exists
+      // Check if user already exists by email (canonical for Domo SSO)
       const existingUser = await pool.request()
-        .input('username', sql.NVarChar, userData.username)
+        .input('email', sql.NVarChar, userData.email)
         .query(`
-          SELECT UserId, Username
+          SELECT UserId, Username, IsActive
           FROM auth.[User]
-          WHERE Username = @username
+          WHERE LOWER(Email) = LOWER(@email)
         `);
 
       if (existingUser.recordset.length > 0) {
-        console.log(`⚠️  User ${userData.username} already exists, skipping...`);
+        const existing = existingUser.recordset[0];
+        if (!existing.IsActive) {
+          await pool.request()
+            .input('userId', sql.Int, existing.UserId)
+            .query(`UPDATE auth.[User] SET IsActive = 1 WHERE UserId = @userId`);
+          console.log(`✅ Reactivated admin user: ${userData.email}`);
+        } else {
+          console.log(`⚠️  Admin user ${userData.email} already exists, skipping...`);
+        }
         continue;
       }
 
@@ -148,7 +163,7 @@ async function seedUsers() {
         `);
 
       const userId = result.recordset[0].UserId;
-      console.log(`✅ Created user: ${userData.username} (ID: ${userId})`);
+      console.log(`✅ Created admin user: ${userData.email} (ID: ${userId})`);
     }
 
     console.log('\n✨ User seeding completed successfully!');
