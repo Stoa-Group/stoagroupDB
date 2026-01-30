@@ -3,7 +3,13 @@ import sql from 'mssql';
 import fs from 'fs';
 import path from 'path';
 import { getConnection } from '../config/database';
-import { getFullPath, getRelativeStoragePath } from '../middleware/uploadMiddleware';
+import { getFullPath, getRelativeStoragePath, buildStoragePath } from '../middleware/uploadMiddleware';
+import {
+  isBlobStorageConfigured,
+  uploadBufferToBlob,
+  downloadBlobToStream,
+  deleteBlob as deleteBlobFile,
+} from '../config/azureBlob';
 
 // ============================================================
 // UNDER CONTRACT CONTROLLER
@@ -2281,8 +2287,10 @@ export const uploadDealPipelineAttachment = async (req: Request, res: Response, 
       res.status(400).json({ success: false, error: { message: 'Invalid deal pipeline id' } });
       return;
     }
-    const file = (req as Request & { file?: { path: string; originalname?: string; mimetype?: string; size?: number } }).file;
-    if (!file || !file.path) {
+    const file = (req as Request & {
+      file?: { path?: string; buffer?: Buffer; originalname?: string; mimetype?: string; size?: number };
+    }).file;
+    if (!file || (!file.path && !file.buffer)) {
       res.status(400).json({ success: false, error: { message: 'No file uploaded; use multipart field "file"' } });
       return;
     }
@@ -2291,17 +2299,29 @@ export const uploadDealPipelineAttachment = async (req: Request, res: Response, 
       .input('id', sql.Int, dealPipelineId)
       .query('SELECT 1 FROM pipeline.DealPipeline WHERE DealPipelineId = @id');
     if (exists.recordset.length === 0) {
-      try { fs.unlinkSync(file.path); } catch (_) {}
+      try { if (file.path) fs.unlinkSync(file.path); } catch (_) {}
       res.status(404).json({ success: false, error: { message: 'Deal Pipeline record not found' } });
       return;
     }
-    const storagePath = getRelativeStoragePath(file.path);
+    let storagePath: string;
+    const fileName = file.originalname || (file.path ? path.basename(file.path) : 'file');
+    const contentType = file.mimetype || null;
+    const fileSize = file.size ?? (file.buffer ? file.buffer.length : null);
+    if (isBlobStorageConfigured() && file.buffer) {
+      storagePath = buildStoragePath(dealPipelineId, fileName);
+      await uploadBufferToBlob(storagePath, file.buffer, contentType || undefined);
+    } else if (file.path) {
+      storagePath = getRelativeStoragePath(file.path);
+    } else {
+      res.status(500).json({ success: false, error: { message: 'Azure Blob configured but file buffer missing' } });
+      return;
+    }
     const result = await pool.request()
       .input('DealPipelineId', sql.Int, dealPipelineId)
-      .input('FileName', sql.NVarChar(255), file.originalname || path.basename(file.path))
+      .input('FileName', sql.NVarChar(255), fileName)
       .input('StoragePath', sql.NVarChar(1000), storagePath)
-      .input('ContentType', sql.NVarChar(100), file.mimetype || null)
-      .input('FileSizeBytes', sql.BigInt, file.size ?? null)
+      .input('ContentType', sql.NVarChar(100), contentType)
+      .input('FileSizeBytes', sql.BigInt, fileSize)
       .query(`
         INSERT INTO pipeline.DealPipelineAttachment (DealPipelineId, FileName, StoragePath, ContentType, FileSizeBytes)
         OUTPUT INSERTED.DealPipelineAttachmentId, INSERTED.DealPipelineId, INSERTED.FileName, INSERTED.ContentType, INSERTED.FileSizeBytes, INSERTED.CreatedAt
@@ -2330,9 +2350,27 @@ export const downloadDealPipelineAttachment = async (req: Request, res: Response
       return;
     }
     const row = result.recordset[0];
+    if (isBlobStorageConfigured()) {
+      const blobResult = await downloadBlobToStream(row.StoragePath);
+      if (blobResult) {
+        res.setHeader('Content-Type', row.ContentType || blobResult.contentType || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(row.FileName)}"`);
+        blobResult.readableStream.pipe(res);
+        return;
+      }
+    }
     const fullPath = getFullPath(row.StoragePath);
     if (!fs.existsSync(fullPath)) {
-      res.status(404).json({ success: false, error: { message: 'File not found on server' } });
+      res.status(404).json({
+        success: false,
+        error: {
+          message: 'File not found on server',
+          detail: isBlobStorageConfigured()
+            ? 'Attachment record exists but the file was not found in Azure Blob Storage. Re-run the attach script with AZURE_STORAGE_* set to repopulate blobs.'
+            : 'Attachment record exists but the file is missing at the expected path. Set AZURE_STORAGE_CONNECTION_STRING and AZURE_STORAGE_CONTAINER to use Azure Blob, or ensure uploads are in api/uploads.',
+          path: fullPath,
+        },
+      });
       return;
     }
     const contentType = row.ContentType || 'application/octet-stream';
@@ -2360,9 +2398,13 @@ export const deleteDealPipelineAttachment = async (req: Request, res: Response, 
       res.status(404).json({ success: false, error: { message: 'Attachment not found' } });
       return;
     }
-    const fullPath = getFullPath(result.recordset[0].StoragePath);
+    const storagePath = result.recordset[0].StoragePath;
     await pool.request().input('id', sql.Int, id).query('DELETE FROM pipeline.DealPipelineAttachment WHERE DealPipelineAttachmentId = @id');
+    if (isBlobStorageConfigured()) {
+      await deleteBlobFile(storagePath);
+    }
     try {
+      const fullPath = getFullPath(storagePath);
       if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
     } catch (_) {}
     res.json({ success: true, message: 'Attachment deleted' });

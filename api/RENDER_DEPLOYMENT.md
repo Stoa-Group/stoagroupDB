@@ -43,7 +43,7 @@ Make sure your code is in a Git repository (GitHub, GitLab, or Bitbucket).
 
 ### Step 5: Set Environment Variables
 
-In the Render dashboard, go to **Environment** section and add:
+In the Render dashboard, go to **Environment** (or **Environment Variables**) and add:
 
 ```
 DB_SERVER=stoagroupdb.database.windows.net
@@ -54,11 +54,24 @@ DB_ENCRYPT=true
 DB_TRUST_SERVER_CERTIFICATE=false
 NODE_ENV=production
 CORS_ORIGINS=*
+
+# Auth: JWT signing key (required for login / Domo SSO)
+JWT_SECRET=your-strong-random-secret-here
+JWT_EXPIRES_IN=24h
 ```
 
+**Deal pipeline attachments (Azure Blob):**  
+Store the Azure Storage key in Render’s Environment — **do not put it in code.** Set:
+```
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net
+AZURE_STORAGE_CONTAINER=deal-pipeline-attachments
+```
+Get the connection string from Azure Portal → your Storage Account → **Access keys** → “Connection string”. Without these, attachments use local disk (and are lost on redeploy).
+
 **Important:** 
-- Replace `your_actual_password_here` with your real database password
-- For production, you might want to restrict CORS_ORIGINS to your Domo URL
+- Replace `your_actual_password_here` with your real database password.
+- Replace `your-strong-random-secret-here` with a long random string (e.g. from `openssl rand -base64 32`). **Store the JWT secret only in Render’s Environment** — never in code or Git.
+- For production, restrict `CORS_ORIGINS` to your Domo URL if needed.
 
 ### Step 6: Deploy
 
@@ -194,6 +207,7 @@ If you want to use Docker instead:
 Before deploying:
 - [ ] Code is in a Git repository
 - [ ] `.env` file is NOT committed (use Render env vars instead)
+- [ ] `JWT_SECRET` and DB credentials set in Render **Environment** (not in code)
 - [ ] `npm run build` works locally
 - [ ] `npm start` works locally
 - [ ] You know your database password

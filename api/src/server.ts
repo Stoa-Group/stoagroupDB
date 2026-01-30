@@ -8,6 +8,7 @@ import pipelineRoutes from './routes/pipelineRoutes';
 import authRoutes from './routes/authRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { getConnection } from './config/database';
+import { ensureContainerExists } from './config/azureBlob';
 
 dotenv.config();
 
@@ -232,12 +233,22 @@ app.get('/api', (req: Request, res: Response) => {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📚 API Documentation: http://localhost:${PORT}/api`);
-  console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
-});
+// Start server (ensure Azure Blob container exists when blob storage is configured)
+ensureContainerExists()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📚 API Documentation: http://localhost:${PORT}/api`);
+      console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
+    });
+  })
+  .catch(() => {
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📚 API Documentation: http://localhost:${PORT}/api`);
+      console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
+    });
+  });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
