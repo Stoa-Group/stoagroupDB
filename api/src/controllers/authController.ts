@@ -43,7 +43,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       .query(`
         SELECT UserId, Username, PasswordHash, Email, FullName, IsActive
         FROM auth.[User]
-        WHERE Username = @username
+        WHERE LOWER(Username) = LOWER(@username)
       `);
 
     if (result.recordset.length === 0) {
