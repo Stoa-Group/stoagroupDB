@@ -427,11 +427,26 @@ CREATE TABLE pipeline.ClosedProperty (
 );
 
 -- ============================================================
+-- PIPELINE: BROKER/REFERRAL CONTACT (Land Development)
+-- ============================================================
+CREATE TABLE pipeline.BrokerReferralContact (
+    BrokerReferralContactId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_BrokerReferralContact PRIMARY KEY,
+    Name NVARCHAR(255) NOT NULL,
+    Email NVARCHAR(255) NULL,
+    Phone NVARCHAR(100) NULL,
+    CreatedAt DATETIME2(0) NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt DATETIME2(0) NULL
+);
+
+-- ============================================================
 -- PIPELINE: DEAL PIPELINE (Land Development Deal Tracker)
 -- ============================================================
 CREATE TABLE pipeline.DealPipeline (
     DealPipelineId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_DealPipeline PRIMARY KEY,
     ProjectId INT NOT NULL,
+    
+    -- Broker/Referral (optional FK)
+    BrokerReferralContactId INT NULL,
     
     -- Asana tracking fields
     Bank NVARCHAR(255) NULL,
@@ -461,6 +476,7 @@ CREATE TABLE pipeline.DealPipeline (
     Zoning NVARCHAR(100) NULL,
     Zoned NVARCHAR(20) NULL,           -- Yes, No, Partially
     ListingStatus NVARCHAR(50) NULL,   -- Listed, Unlisted
+    PriceRaw NVARCHAR(100) NULL,       -- Free-form price e.g. "-", "$1.2M", "TBD"
     BrokerReferralSource NVARCHAR(255) NULL,
     RejectedReason NVARCHAR(500) NULL,
     
@@ -477,12 +493,14 @@ CREATE TABLE pipeline.DealPipeline (
     UpdatedAt DATETIME2(0) NULL,
     
     CONSTRAINT FK_DP_Project FOREIGN KEY (ProjectId) REFERENCES core.Project(ProjectId) ON DELETE CASCADE,
+    CONSTRAINT FK_DP_BrokerReferralContact FOREIGN KEY (BrokerReferralContactId) REFERENCES pipeline.BrokerReferralContact(BrokerReferralContactId),
     CONSTRAINT FK_DP_PreConManager FOREIGN KEY (PreConManagerId) REFERENCES core.PreConManager(PreConManagerId),
     CONSTRAINT UQ_DP_Project UNIQUE (ProjectId),
     CONSTRAINT CK_DP_Priority CHECK (Priority IS NULL OR Priority IN ('High', 'Medium', 'Low'))
 );
 
 CREATE INDEX IX_DealPipeline_ProjectId ON pipeline.DealPipeline(ProjectId);
+CREATE INDEX IX_DealPipeline_BrokerReferralContactId ON pipeline.DealPipeline(BrokerReferralContactId);
 CREATE INDEX IX_DealPipeline_Bank ON pipeline.DealPipeline(Bank);
 CREATE INDEX IX_DealPipeline_PreConManagerId ON pipeline.DealPipeline(PreConManagerId);
 CREATE INDEX IX_DealPipeline_StartDate ON pipeline.DealPipeline(StartDate);

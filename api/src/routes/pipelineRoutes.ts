@@ -35,6 +35,13 @@ router.post('/closed-properties', pipelineController.createClosedProperty);
 router.put('/closed-properties/:id', pipelineController.updateClosedProperty);
 router.delete('/closed-properties/:id', pipelineController.deleteClosedProperty);
 
+// Broker/Referral Contact routes (Land Development Pipeline)
+router.get('/broker-referral-contacts', pipelineController.getAllBrokerReferralContacts);
+router.get('/broker-referral-contacts/:id', pipelineController.getBrokerReferralContactById);
+router.post('/broker-referral-contacts', pipelineController.createBrokerReferralContact);
+router.put('/broker-referral-contacts/:id', pipelineController.updateBrokerReferralContact);
+router.delete('/broker-referral-contacts/:id', pipelineController.deleteBrokerReferralContact);
+
 // Deal Pipeline routes (Land Development Deal Tracker)
 router.get('/deal-pipeline', pipelineController.getAllDealPipelines);
 router.get('/deal-pipeline/project/:projectId', pipelineController.getDealPipelineByProjectId); // Get by ProjectId (must come before /:id)

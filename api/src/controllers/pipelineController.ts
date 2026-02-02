@@ -1408,6 +1408,144 @@ export const deleteClosedProperty = async (req: Request, res: Response, next: Ne
 };
 
 // ============================================================
+// BROKER/REFERRAL CONTACT (Land Development Pipeline)
+// ============================================================
+
+export const getAllBrokerReferralContacts = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const q = (req.query.q as string) || '';
+    const pool = await getConnection();
+    if (q.trim()) {
+      const result = await pool.request()
+        .input('q', sql.NVarChar(255), `%${q.trim()}%`)
+        .query(`
+          SELECT BrokerReferralContactId, Name, Email, Phone, CreatedAt, ModifiedAt
+          FROM pipeline.BrokerReferralContact
+          WHERE Name LIKE @q OR Email LIKE @q OR Phone LIKE @q
+          ORDER BY Name
+        `);
+      res.json({ success: true, data: result.recordset });
+    } else {
+      const result = await pool.request().query(`
+        SELECT BrokerReferralContactId, Name, Email, Phone, CreatedAt, ModifiedAt
+        FROM pipeline.BrokerReferralContact
+        ORDER BY Name
+      `);
+      res.json({ success: true, data: result.recordset });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getBrokerReferralContactById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid id' } });
+      return;
+    }
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT BrokerReferralContactId, Name, Email, Phone, CreatedAt, ModifiedAt
+        FROM pipeline.BrokerReferralContact
+        WHERE BrokerReferralContactId = @id
+      `);
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Contact not found' } });
+      return;
+    }
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createBrokerReferralContact = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { Name, Email, Phone } = req.body;
+    if (!Name || typeof Name !== 'string' || !Name.trim()) {
+      res.status(400).json({ success: false, error: { message: 'Name is required' } });
+      return;
+    }
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('Name', sql.NVarChar(255), Name.trim())
+      .input('Email', sql.NVarChar(255), Email ?? null)
+      .input('Phone', sql.NVarChar(100), Phone ?? null)
+      .query(`
+        INSERT INTO pipeline.BrokerReferralContact (Name, Email, Phone)
+        OUTPUT INSERTED.BrokerReferralContactId, INSERTED.Name, INSERTED.Email, INSERTED.Phone, INSERTED.CreatedAt, INSERTED.ModifiedAt
+        VALUES (@Name, @Email, @Phone)
+      `);
+    res.status(201).json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateBrokerReferralContact = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid id' } });
+      return;
+    }
+    const { Name, Email, Phone } = req.body;
+    const pool = await getConnection();
+    const check = await pool.request().input('id', sql.Int, id)
+      .query('SELECT BrokerReferralContactId FROM pipeline.BrokerReferralContact WHERE BrokerReferralContactId = @id');
+    if (check.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Contact not found' } });
+      return;
+    }
+    const updates: string[] = ['ModifiedAt = SYSDATETIME()'];
+    const request = pool.request().input('id', sql.Int, id);
+    if (Name !== undefined) { updates.push('Name = @Name'); request.input('Name', sql.NVarChar(255), Name); }
+    if (Email !== undefined) { updates.push('Email = @Email'); request.input('Email', sql.NVarChar(255), Email); }
+    if (Phone !== undefined) { updates.push('Phone = @Phone'); request.input('Phone', sql.NVarChar(100), Phone); }
+    await request.query(`
+      UPDATE pipeline.BrokerReferralContact SET ${updates.join(', ')} WHERE BrokerReferralContactId = @id
+    `);
+    const result = await pool.request().input('id', sql.Int, id).query(`
+      SELECT BrokerReferralContactId, Name, Email, Phone, CreatedAt, ModifiedAt
+      FROM pipeline.BrokerReferralContact WHERE BrokerReferralContactId = @id
+    `);
+    res.json({ success: true, data: result.recordset[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteBrokerReferralContact = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid id' } });
+      return;
+    }
+    const pool = await getConnection();
+    const inUse = await pool.request().input('id', sql.Int, id)
+      .query('SELECT 1 FROM pipeline.DealPipeline WHERE BrokerReferralContactId = @id');
+    if (inUse.recordset.length > 0) {
+      res.status(409).json({ success: false, error: { message: 'Contact is referenced by one or more deals; clear BrokerReferralContactId on those deals first' } });
+      return;
+    }
+    const result = await pool.request().input('id', sql.Int, id)
+      .query('DELETE FROM pipeline.BrokerReferralContact WHERE BrokerReferralContactId = @id');
+    if (result.rowsAffected[0] === 0) {
+      res.status(404).json({ success: false, error: { message: 'Contact not found' } });
+      return;
+    }
+    res.json({ success: true, message: 'Contact deleted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================================
 // DEAL PIPELINE CONTROLLER (Land Development Deal Tracker)
 // ============================================================
 
@@ -1458,6 +1596,8 @@ export const getAllDealPipelines = async (req: Request, res: Response, next: Nex
         dp.Zoning,
         dp.Zoned,
         dp.ListingStatus,
+        dp.PriceRaw,
+        dp.BrokerReferralContactId,
         dp.BrokerReferralSource,
         dp.RejectedReason,
         dp.Latitude,
@@ -1465,11 +1605,15 @@ export const getAllDealPipelines = async (req: Request, res: Response, next: Nex
         dp.AsanaTaskGid,
         dp.AsanaProjectGid,
         dp.CreatedAt,
-        dp.UpdatedAt
+        dp.UpdatedAt,
+        br.Name AS BrokerReferralContactName,
+        br.Email AS BrokerReferralContactEmail,
+        br.Phone AS BrokerReferralContactPhone
       FROM pipeline.DealPipeline dp
       LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
       LEFT JOIN core.Region r ON p.Region = r.RegionName
       LEFT JOIN core.PreConManager pm ON dp.PreConManagerId = pm.PreConManagerId
+      LEFT JOIN pipeline.BrokerReferralContact br ON dp.BrokerReferralContactId = br.BrokerReferralContactId
       ORDER BY dp.DealPipelineId
     `);
     res.json({ success: true, data: normalizeStateInPayload(result.recordset) });
@@ -1600,16 +1744,22 @@ export const getDealPipelineByProjectId = async (req: Request, res: Response, ne
           dp.Zoning,
           dp.Zoned,
           dp.ListingStatus,
+          dp.PriceRaw,
+          dp.BrokerReferralContactId,
           dp.BrokerReferralSource,
           dp.RejectedReason,
           dp.AsanaTaskGid,
           dp.AsanaProjectGid,
           dp.CreatedAt,
-          dp.UpdatedAt
+          dp.UpdatedAt,
+          br.Name AS BrokerReferralContactName,
+          br.Email AS BrokerReferralContactEmail,
+          br.Phone AS BrokerReferralContactPhone
         FROM pipeline.DealPipeline dp
         LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
         LEFT JOIN core.Region r ON p.Region = r.RegionName
         LEFT JOIN core.PreConManager pm ON dp.PreConManagerId = pm.PreConManagerId
+        LEFT JOIN pipeline.BrokerReferralContact br ON dp.BrokerReferralContactId = br.BrokerReferralContactId
         WHERE dp.ProjectId = @projectId
       `);
     
@@ -1662,6 +1812,8 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
       Zoning,
       Zoned,
       ListingStatus,
+      PriceRaw,
+      BrokerReferralContactId,
       BrokerReferralSource,
       RejectedReason,
       Latitude,
@@ -1809,6 +1961,8 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
       .input('Zoning', sql.NVarChar(100), Zoning)
       .input('Zoned', sql.NVarChar(20), Zoned)
       .input('ListingStatus', sql.NVarChar(50), ListingStatus)
+      .input('PriceRaw', sql.NVarChar(100), PriceRaw)
+      .input('BrokerReferralContactId', sql.Int, BrokerReferralContactId)
       .input('BrokerReferralSource', sql.NVarChar(255), BrokerReferralSource)
       .input('RejectedReason', sql.NVarChar(500), RejectedReason)
       .input('AsanaTaskGid', sql.NVarChar(100), AsanaTaskGid)
@@ -1823,7 +1977,7 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
             ConstructionLoanClosingDate, Notes, Priority, Acreage, LandPrice,
             SqFtPrice, ExecutionDate, DueDiligenceDate, ClosingDate,
             PurchasingEntity, Cash, OpportunityZone, ClosingNotes,
-            County, ZipCode, MFAcreage, Zoning, Zoned, ListingStatus, BrokerReferralSource, RejectedReason,
+            County, ZipCode, MFAcreage, Zoning, Zoned, ListingStatus, PriceRaw, BrokerReferralContactId, BrokerReferralSource, RejectedReason,
             AsanaTaskGid, AsanaProjectGid, Latitude, Longitude
           )
           VALUES (
@@ -1831,7 +1985,7 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
             @ConstructionLoanClosingDate, @Notes, @Priority, @Acreage, @LandPrice,
             @SqFtPrice, @ExecutionDate, @DueDiligenceDate, @ClosingDate,
             @PurchasingEntity, @Cash, @OpportunityZone, @ClosingNotes,
-            @County, @ZipCode, @MFAcreage, @Zoning, @Zoned, @ListingStatus, @BrokerReferralSource, @RejectedReason,
+            @County, @ZipCode, @MFAcreage, @Zoning, @Zoned, @ListingStatus, @PriceRaw, @BrokerReferralContactId, @BrokerReferralSource, @RejectedReason,
             @AsanaTaskGid, @AsanaProjectGid, @Latitude, @Longitude
           );
         END
@@ -1879,6 +2033,8 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
           dp.Zoning,
           dp.Zoned,
           dp.ListingStatus,
+          dp.PriceRaw,
+          dp.BrokerReferralContactId,
           dp.BrokerReferralSource,
           dp.RejectedReason,
           dp.AsanaTaskGid,
@@ -1886,11 +2042,15 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
           dp.Latitude,
           dp.Longitude,
           dp.CreatedAt,
-          dp.UpdatedAt
+          dp.UpdatedAt,
+          br.Name AS BrokerReferralContactName,
+          br.Email AS BrokerReferralContactEmail,
+          br.Phone AS BrokerReferralContactPhone
         FROM pipeline.DealPipeline dp
         LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
         LEFT JOIN core.Region r ON p.Region = r.RegionName
         LEFT JOIN core.PreConManager pm ON dp.PreConManagerId = pm.PreConManagerId
+        LEFT JOIN pipeline.BrokerReferralContact br ON dp.BrokerReferralContactId = br.BrokerReferralContactId
         WHERE dp.ProjectId = @ProjectId
       `);
 
@@ -2219,19 +2379,25 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
           dp.Zoning,
           dp.Zoned,
           dp.ListingStatus,
-        dp.BrokerReferralSource,
-        dp.RejectedReason,
-        dp.Latitude,
-        dp.Longitude,
-        dp.AsanaTaskGid,
-        dp.AsanaProjectGid,
-        dp.CreatedAt,
-        dp.UpdatedAt
-      FROM pipeline.DealPipeline dp
-      LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
-      LEFT JOIN core.Region r ON p.Region = r.RegionName
-      LEFT JOIN core.PreConManager pm ON dp.PreConManagerId = pm.PreConManagerId
-      WHERE dp.DealPipelineId = @id
+          dp.PriceRaw,
+          dp.BrokerReferralContactId,
+          dp.BrokerReferralSource,
+          dp.RejectedReason,
+          dp.Latitude,
+          dp.Longitude,
+          dp.AsanaTaskGid,
+          dp.AsanaProjectGid,
+          dp.CreatedAt,
+          dp.UpdatedAt,
+          br.Name AS BrokerReferralContactName,
+          br.Email AS BrokerReferralContactEmail,
+          br.Phone AS BrokerReferralContactPhone
+        FROM pipeline.DealPipeline dp
+        LEFT JOIN core.Project p ON dp.ProjectId = p.ProjectId
+        LEFT JOIN core.Region r ON p.Region = r.RegionName
+        LEFT JOIN core.PreConManager pm ON dp.PreConManagerId = pm.PreConManagerId
+        LEFT JOIN pipeline.BrokerReferralContact br ON dp.BrokerReferralContactId = br.BrokerReferralContactId
+        WHERE dp.DealPipelineId = @id
       `);
 
     if (updated.recordset.length === 0) {

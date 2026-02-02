@@ -1780,6 +1780,57 @@
 }
 
 // ============================================================
+// PIPELINE: BROKER/REFERRAL CONTACTS (Land Development Pipeline)
+// ============================================================
+
+/**
+ * Get all broker/referral contacts, optionally filtered by name search
+ * @param {string} [q] - Optional search query; partial case-insensitive match on Name
+ * @returns {Promise<object>} { success: true, data: [{ BrokerReferralContactId, Name, Email, Phone, CreatedAt, ModifiedAt }, ...] }
+ */
+  async function getAllBrokerReferralContacts(q) {
+  const query = q != null && q !== '' ? `?q=${encodeURIComponent(q)}` : '';
+  return apiRequest(`/api/pipeline/broker-referral-contacts${query}`);
+}
+
+/**
+ * Get a broker/referral contact by ID
+ * @param {number} id - BrokerReferralContactId
+ * @returns {Promise<object>} { success: true, data: { BrokerReferralContactId, Name, Email, Phone, CreatedAt, ModifiedAt } }
+ */
+  async function getBrokerReferralContactById(id) {
+  return apiRequest(`/api/pipeline/broker-referral-contacts/${id}`);
+}
+
+/**
+ * Create a broker/referral contact
+ * @param {object} data - { Name (required), Email?, Phone? }
+ * @returns {Promise<object>} { success: true, data: { BrokerReferralContactId, Name, Email, Phone, CreatedAt, ModifiedAt } }
+ */
+  async function createBrokerReferralContact(data) {
+  return apiRequest('/api/pipeline/broker-referral-contacts', 'POST', data);
+}
+
+/**
+ * Update a broker/referral contact
+ * @param {number} id - BrokerReferralContactId
+ * @param {object} data - { Name?, Email?, Phone? } (only send fields to update)
+ * @returns {Promise<object>} { success: true, data: { ... } }
+ */
+  async function updateBrokerReferralContact(id, data) {
+  return apiRequest(`/api/pipeline/broker-referral-contacts/${id}`, 'PUT', data);
+}
+
+/**
+ * Delete a broker/referral contact. Fails with 409 if any deal references this contact.
+ * @param {number} id - BrokerReferralContactId
+ * @returns {Promise<object>} { success: true, message: 'Contact deleted' }
+ */
+  async function deleteBrokerReferralContact(id) {
+  return apiRequest(`/api/pipeline/broker-referral-contacts/${id}`, 'DELETE');
+}
+
+// ============================================================
 // PIPELINE: DEAL PIPELINE (Land Development Deal Tracker)
 // ============================================================
 
@@ -1789,6 +1840,8 @@
  * Returns all deals with CORE attributes joined:
  * - ProjectName, City, State, Region, Units, ProductType, Stage (from core.Project)
  * - All Deal Pipeline specific fields (Bank, StartDate, UnitCount, PreConManager, etc.)
+ * - BrokerReferralContactId, PriceRaw, ListingStatus, Zoning, County
+ * - Optional nested BrokerReferralContact: { BrokerReferralContactId, Name, Email, Phone }
  * 
  * @returns {Promise<object>} { success: true, data: [...] }
  * @example
@@ -1851,6 +1904,8 @@
  * - Zoning: string (Site Tracking)
  * - Zoned: string (Yes/No/Partially, Site Tracking)
  * - ListingStatus: string (Listed/Unlisted, Site Tracking)
+ * - BrokerReferralContactId: number | null (FK to Broker/Referral Contact)
+ * - PriceRaw: string (e.g. "-", "$1.2M", "TBD")
  * - BrokerReferralSource: string (Site Tracking)
  * - RejectedReason: string (Site Tracking)
  * - Latitude: number (optional; also populated from KMZ attachments)
@@ -2311,6 +2366,13 @@
   API.createClosedProperty = createClosedProperty;
   API.updateClosedProperty = updateClosedProperty;
   API.deleteClosedProperty = deleteClosedProperty;
+  
+  // Pipeline - Broker/Referral Contacts
+  API.getAllBrokerReferralContacts = getAllBrokerReferralContacts;
+  API.getBrokerReferralContactById = getBrokerReferralContactById;
+  API.createBrokerReferralContact = createBrokerReferralContact;
+  API.updateBrokerReferralContact = updateBrokerReferralContact;
+  API.deleteBrokerReferralContact = deleteBrokerReferralContact;
   
   // Pipeline - Deal Pipeline
   API.getAllDealPipelines = getAllDealPipelines;
