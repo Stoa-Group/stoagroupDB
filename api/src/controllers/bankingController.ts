@@ -36,7 +36,7 @@ export const getAllLoans = async (req: Request, res: Response, next: NextFunctio
       FROM banking.Loan l
       LEFT JOIN core.Project p ON l.ProjectId = p.ProjectId
       LEFT JOIN core.Bank b ON l.LenderId = b.BankId
-      ORDER BY l.LoanId
+      ORDER BY l.IsActive DESC, COALESCE(l.BirthOrder, 999), l.LoanId
     `);
     res.json({ success: true, data: result.recordset });
   } catch (error) {
@@ -99,7 +99,7 @@ export const getLoansByProject = async (req: Request, res: Response, next: NextF
         FROM banking.Loan l
         LEFT JOIN core.Bank b ON l.LenderId = b.BankId
         WHERE l.ProjectId = @projectId 
-        ORDER BY l.LoanId
+        ORDER BY l.IsActive DESC, COALESCE(l.BirthOrder, 999), l.LoanId
       `);
     
     res.json({ success: true, data: result.recordset });
@@ -113,10 +113,12 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
     const {
       ProjectId, BirthOrder, LoanType, Borrower, LoanPhase, FinancingStage, LenderId,
       LoanAmount, LoanClosingDate, MaturityDate, FixedOrFloating, IndexName,
-      Spread, InterestRate, MiniPermMaturity, MiniPermInterestRate,
+      Spread, InterestRate, InterestRateFloor, InterestRateCeiling,
+      MiniPermMaturity, MiniPermInterestRate,
       PermPhaseMaturity, PermPhaseInterestRate, ConstructionCompletionDate,
       ConstructionCompletionSource, LeaseUpCompletedDate, IOMaturityDate, PermanentCloseDate,
-      PermanentLoanAmount, Notes
+      PermanentLoanAmount, Notes,
+      IsActive = true, IsPrimary = false
     } = req.body;
 
     if (!ProjectId || !LoanPhase) {
@@ -158,6 +160,10 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
       .input('IndexName', sql.NVarChar, IndexName)
       .input('Spread', sql.NVarChar, Spread)
       .input('InterestRate', sql.NVarChar, InterestRate)
+      .input('InterestRateFloor', sql.NVarChar, InterestRateFloor)
+      .input('InterestRateCeiling', sql.NVarChar, InterestRateCeiling)
+      .input('IsActive', sql.Bit, IsActive === true || IsActive === 1)
+      .input('IsPrimary', sql.Bit, IsPrimary === true || IsPrimary === 1)
       .input('MiniPermMaturity', sql.Date, MiniPermMaturity)
       .input('MiniPermInterestRate', sql.NVarChar, MiniPermInterestRate)
       .input('PermPhaseMaturity', sql.Date, PermPhaseMaturity)
@@ -175,18 +181,20 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
       INSERT INTO banking.Loan (
         ProjectId, BirthOrder, LoanType, Borrower, LoanPhase, FinancingStage, LenderId,
         LoanAmount, LoanClosingDate, MaturityDate, FixedOrFloating, IndexName,
-        Spread, InterestRate, MiniPermMaturity, MiniPermInterestRate,
+        Spread, InterestRate, InterestRateFloor, InterestRateCeiling,
+        MiniPermMaturity, MiniPermInterestRate,
         PermPhaseMaturity, PermPhaseInterestRate, ConstructionCompletionDate,
         ConstructionCompletionSource, LeaseUpCompletedDate, IOMaturityDate, PermanentCloseDate,
-        PermanentLoanAmount, Notes
+        PermanentLoanAmount, Notes, IsActive, IsPrimary
       )
       VALUES (
         @ProjectId, @BirthOrder, @LoanType, @Borrower, @LoanPhase, @FinancingStage, @LenderId,
         @LoanAmount, @LoanClosingDate, @MaturityDate, @FixedOrFloating, @IndexName,
-        @Spread, @InterestRate, @MiniPermMaturity, @MiniPermInterestRate,
+        @Spread, @InterestRate, @InterestRateFloor, @InterestRateCeiling,
+        @MiniPermMaturity, @MiniPermInterestRate,
         @PermPhaseMaturity, @PermPhaseInterestRate, @ConstructionCompletionDate,
         @ConstructionCompletionSource, @LeaseUpCompletedDate, @IOMaturityDate, @PermanentCloseDate,
-        @PermanentLoanAmount, @Notes
+        @PermanentLoanAmount, @Notes, @IsActive, @IsPrimary
       )
     `);
 
@@ -287,7 +295,11 @@ export const updateLoan = async (req: Request, res: Response, next: NextFunction
     Object.keys(loanData).forEach((key) => {
       if (key !== 'LoanId' && loanData[key] !== undefined) {
         fields.push(`${key} = @${key}`);
-        if (typeof loanData[key] === 'number' && key.includes('Amount')) {
+        if (key === 'IsActive' || key === 'IsPrimary') {
+          request.input(key, sql.Bit, loanData[key] === true || loanData[key] === 1);
+        } else if (key === 'InterestRateFloor' || key === 'InterestRateCeiling') {
+          request.input(key, sql.NVarChar, loanData[key]);
+        } else if (typeof loanData[key] === 'number' && key.includes('Amount')) {
           request.input(key, sql.Decimal(18, 2), loanData[key]);
         } else if (key.includes('Date') && !key.includes('Completion') && !key.includes('Completed')) {
           request.input(key, sql.Date, loanData[key]);
@@ -450,7 +462,11 @@ export const updateLoanByProject = async (req: Request, res: Response, next: Nex
     Object.keys(updateData).forEach((key) => {
       if (key !== 'LoanId' && updateData[key] !== undefined) {
         fields.push(`${key} = @${key}`);
-        if (typeof updateData[key] === 'number' && key.includes('Amount')) {
+        if (key === 'IsActive' || key === 'IsPrimary') {
+          request.input(key, sql.Bit, updateData[key] === true || updateData[key] === 1);
+        } else if (key === 'InterestRateFloor' || key === 'InterestRateCeiling') {
+          request.input(key, sql.NVarChar, updateData[key]);
+        } else if (typeof updateData[key] === 'number' && key.includes('Amount')) {
           request.input(key, sql.Decimal(18, 2), updateData[key]);
         } else if (key.includes('Date') && !key.includes('Completion') && !key.includes('Completed')) {
           request.input(key, sql.Date, updateData[key]);

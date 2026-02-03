@@ -24,6 +24,8 @@ When you run any script or migration that changes the DB, add one entry to the t
 
 | When (UTC) | Who | What changed | From → To | Script / How |
 |------------|-----|--------------|-----------|--------------|
+| 2026-02-03 | Backend (guide) | Loans restructure: IsActive, floor/ceiling, IsPrimary | banking.Loan: added IsActive (BIT, default 1), InterestRateFloor, InterestRateCeiling (NVARCHAR(50)), IsPrimary (BIT). API GET/POST/PUT support; loans by project ordered active first, then BirthOrder, LoanId. | schema/add_loan_restructure_columns.sql, api bankingController |
+| 2025-01-XX | (who) | Bank geographic seed | core.Bank City/State/Address NULL → Populated HQ city, state, and address for 50+ banks (researched) | schema/seed_bank_geographic_info.sql |
 | *(example)* | *(who)* | Deal pipeline site tracking columns | pipeline.DealPipeline had no County/ZipCode/… → Added County, ZipCode, MFAcreage, Zoning, Zoned, ListingStatus, BrokerReferralSource, RejectedReason | schema/add_deal_pipeline_site_tracking_columns.sql |
 
 *(Insert new rows above this line. Replace the example row with real entries when you run migrations.)*
