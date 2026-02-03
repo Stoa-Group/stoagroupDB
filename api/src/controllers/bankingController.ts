@@ -1194,9 +1194,10 @@ export const updateParticipation = async (req: Request, res: Response, next: Nex
     const request = pool.request().input('id', sql.Int, id);
 
     // Build dynamic update query - only update fields that are provided
+    const readonlyKeys = ['ParticipationId', 'CreatedAt', 'UpdatedAt'];
     const fields: string[] = [];
     Object.keys(participationData).forEach((key) => {
-      if (key !== 'ParticipationId' && participationData[key] !== undefined) {
+      if (!readonlyKeys.includes(key) && participationData[key] !== undefined) {
         fields.push(`${key} = @${key}`);
         if (key === 'ProjectId' || key === 'LoanId' || key === 'BankId') {
           request.input(key, sql.Int, participationData[key]);
@@ -1219,7 +1220,7 @@ export const updateParticipation = async (req: Request, res: Response, next: Nex
 
     const result = await request.query(`
       UPDATE banking.Participation
-      SET ${fields.join(', ')}, UpdatedAt = SYSDATETIME()
+      SET ${fields.join(', ')}
       WHERE ParticipationId = @id;
       SELECT * FROM banking.Participation WHERE ParticipationId = @id;
     `);
