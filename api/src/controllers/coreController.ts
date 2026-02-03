@@ -448,6 +448,67 @@ export const deleteBank = async (req: Request, res: Response, next: NextFunction
 };
 
 // ============================================================
+// CONTACT BOOK (unified: each individual once, not as investor + rep)
+// ============================================================
+
+export const getContactBook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    // All Persons with flags: are they investor rep / individual investor (so UI shows one row per person)
+    const personsResult = await pool.request().query(`
+      SELECT 
+        p.PersonId,
+        p.FullName,
+        p.Email,
+        p.Phone,
+        p.Title,
+        p.Notes,
+        CASE WHEN EXISTS (SELECT 1 FROM core.EquityPartner ep WHERE ep.InvestorRepId = p.PersonId) THEN 1 ELSE 0 END AS IsInvestorRep,
+        CASE WHEN EXISTS (SELECT 1 FROM core.EquityPartner ep WHERE ep.InvestorRepId = p.PersonId AND ep.PartnerType = N'Individual') THEN 1 ELSE 0 END AS IsIndividualInvestor
+      FROM core.Person p
+      ORDER BY p.FullName
+    `);
+    const personRows = personsResult.recordset.map((r: Record<string, unknown>) => ({
+      PersonId: r.PersonId,
+      EquityPartnerId: null,
+      FullName: r.FullName,
+      Email: r.Email,
+      Phone: r.Phone,
+      Title: r.Title,
+      Notes: r.Notes,
+      IsInvestorRep: (r.IsInvestorRep as number) === 1,
+      IsIndividualInvestor: (r.IsIndividualInvestor as number) === 1,
+    }));
+
+    // Individual equity partners with no linked Person — show once as contact (no duplicate as "investor rep")
+    const individualOnlyResult = await pool.request().query(`
+      SELECT EquityPartnerId, PartnerName AS FullName
+      FROM core.EquityPartner
+      WHERE PartnerType = N'Individual' AND InvestorRepId IS NULL
+      ORDER BY PartnerName
+    `);
+    const individualOnlyRows = individualOnlyResult.recordset.map((r: Record<string, unknown>) => ({
+      PersonId: null,
+      EquityPartnerId: r.EquityPartnerId,
+      FullName: r.FullName,
+      Email: null,
+      Phone: null,
+      Title: null,
+      Notes: null,
+      IsInvestorRep: false,
+      IsIndividualInvestor: true,
+    }));
+
+    const combined = [...personRows, ...individualOnlyRows].sort((a, b) =>
+      String(a.FullName || '').localeCompare(String(b.FullName || ''), undefined, { sensitivity: 'base' })
+    );
+    res.json({ success: true, data: combined });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================================
 // PERSON CONTROLLER
 // ============================================================
 
@@ -792,6 +853,34 @@ export const getEquityPartnerByIMSId = async (req: Request, res: Response, next:
   }
 };
 
+/**
+ * Find or create a Person by FullName so individual investors/guarantors/reps use one record (no duplicates).
+ * Match is case-insensitive. Returns PersonId.
+ */
+async function findOrCreatePersonByName(
+  request: sql.Request,
+  fullName: string
+): Promise<number> {
+  const nameTrimmed = (fullName || '').trim();
+  if (!nameTrimmed) throw new Error('FullName is required');
+  const existing = await request
+    .input('fullName', sql.NVarChar(255), nameTrimmed)
+    .query(`
+      SELECT PersonId FROM core.Person
+      WHERE LOWER(RTRIM(FullName)) = LOWER(@fullName)
+    `);
+  if (existing.recordset.length > 0) {
+    return existing.recordset[0].PersonId;
+  }
+  const insert = await request
+    .input('fullName', sql.NVarChar(255), nameTrimmed)
+    .query(`
+      INSERT INTO core.Person (FullName) VALUES (@fullName);
+      SELECT SCOPE_IDENTITY() AS PersonId;
+    `);
+  return parseInt(insert.recordset[0].PersonId, 10);
+}
+
 export const createEquityPartner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { PartnerName, Notes, IMSInvestorProfileId, PartnerType, InvestorRepId } = req.body;
@@ -815,6 +904,13 @@ export const createEquityPartner = async (req: Request, res: Response, next: Nex
     
     try {
       await transaction.begin();
+      const txRequest = new sql.Request(transaction);
+
+      // Individual investors: sync to contacts so one person = one core.Person (no duplicate as investor vs rep/guarantor)
+      let effectiveInvestorRepId: number | null = InvestorRepId ?? null;
+      if (PartnerType === 'Individual' && effectiveInvestorRepId == null) {
+        effectiveInvestorRepId = await findOrCreatePersonByName(txRequest, PartnerName);
+      }
       
       // Insert the equity partner
       const result = await new sql.Request(transaction)
@@ -822,7 +918,7 @@ export const createEquityPartner = async (req: Request, res: Response, next: Nex
         .input('Notes', sql.NVarChar(sql.MAX), Notes)
         .input('IMSInvestorProfileId', sql.NVarChar(50), IMSInvestorProfileId)
         .input('PartnerType', sql.NVarChar(20), PartnerType)
-        .input('InvestorRepId', sql.Int, InvestorRepId)
+        .input('InvestorRepId', sql.Int, effectiveInvestorRepId)
         .query(`
           INSERT INTO core.EquityPartner (PartnerName, Notes, IMSInvestorProfileId, PartnerType, InvestorRepId)
           OUTPUT INSERTED.*
@@ -882,7 +978,6 @@ export const updateEquityPartner = async (req: Request, res: Response, next: Nex
     const partnerData = req.body;
 
     const pool = await getConnection();
-    const request = pool.request().input('id', sql.Int, id);
 
     // Validate PartnerType if provided
     if (partnerData.PartnerType && 
@@ -895,6 +990,24 @@ export const updateEquityPartner = async (req: Request, res: Response, next: Nex
       return;
     }
 
+    // Individual investors: sync to contacts so one person = one core.Person (no duplicate)
+    const currentPartner = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT PartnerName, PartnerType, InvestorRepId FROM core.EquityPartner WHERE EquityPartnerId = @id');
+    if (currentPartner.recordset.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Equity Partner not found' } });
+      return;
+    }
+    const current = currentPartner.recordset[0];
+    const isIndividual = partnerData.PartnerType === 'Individual' || current.PartnerType === 'Individual';
+    const partnerName = partnerData.PartnerName !== undefined ? partnerData.PartnerName : current.PartnerName;
+    const effectiveInvestorRepId = partnerData.InvestorRepId !== undefined ? partnerData.InvestorRepId : current.InvestorRepId;
+    if (isIndividual && effectiveInvestorRepId == null && partnerName) {
+      const personId = await findOrCreatePersonByName(pool.request(), partnerName);
+      partnerData.InvestorRepId = personId;
+    }
+
+    const request = pool.request().input('id', sql.Int, id);
     // Build dynamic update query - only update fields that are provided
     const fields: string[] = [];
     Object.keys(partnerData).forEach((key) => {

@@ -17,6 +17,9 @@ router.post('/banks', coreController.createBank);
 router.put('/banks/:id', coreController.updateBank);
 router.delete('/banks/:id', coreController.deleteBank);
 
+// Contact book (unified: each individual once; no duplicate as investor + rep)
+router.get('/contacts', coreController.getContactBook);
+
 // Person routes
 router.get('/persons', coreController.getAllPersons);
 router.get('/persons/:id', coreController.getPersonById);

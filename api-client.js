@@ -245,6 +245,15 @@
 }
 
 // PERSONS
+  /**
+   * Unified contact book: each individual appears once (not once as individual investor and again as investor rep).
+   * Returns Persons plus Individual equity partners with no linked Person. Each row has PersonId and/or EquityPartnerId, FullName, Email, Phone, Title, Notes, IsInvestorRep, IsIndividualInvestor.
+   * @returns {Promise<object>} { success: true, data: Array<{ PersonId?, EquityPartnerId?, FullName, Email?, Phone?, Title?, Notes?, IsInvestorRep, IsIndividualInvestor }> }
+   */
+  async function getContactBook() {
+  return apiRequest('/api/core/contacts');
+}
+
   async function getAllPersons() {
   return apiRequest('/api/core/persons');
 }
@@ -2246,6 +2255,7 @@
   API.deleteBank = deleteBank;
   
   // Core - Persons
+  API.getContactBook = getContactBook;
   API.getAllPersons = getAllPersons;
   API.getPersonById = getPersonById;
   API.createPerson = createPerson;

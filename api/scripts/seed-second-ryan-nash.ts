@@ -3,9 +3,15 @@
  * If exactly one "Ryan Nash" exists, inserts a second with a disambiguating Note.
  * Safe to run multiple times (idempotent).
  *
- * Usage: npx ts-node -r tsconfig-paths/register api/scripts/seed-second-ryan-nash.ts
- * Or:    npm run db:seed-second-ryan-nash
+ * Usage: npm run db:seed-second-ryan-nash (from api/ folder)
+ * Requires .env with DB_SERVER, DB_DATABASE, DB_USER, DB_PASSWORD.
  */
+
+import path from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 import sql from 'mssql';
 import { getConnection } from '../src/config/database';
