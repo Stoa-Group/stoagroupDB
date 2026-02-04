@@ -10,6 +10,7 @@ This guide describes the API and data model for **Land Development Contacts**: t
 
 - **Individuals only.** The contact list is **core.contacts** restricted to **individuals** (people), not entities. Whatever core uses to distinguish individuals from entities (e.g. `ContactType = 'Individual'`, `IsEntity = 0`, or a separate individuals table)—use that so this API **only** returns and operates on individuals.
 - **Land dev adds detail.** Land development tracks extra attributes per contact: Type (Land Owner, Developer, Broker), Office Address, Notes, City, State, Date of Contact, Follow-up Timeframe (days), and follow-up reminders. These are stored in a **land-dev extension** linked to core.contacts.
+- **Land dev adds detail.** Land development tracks extra attributes per contact: Type (Land Owner, Developer, Broker), Office Address, Notes, City, State, Date of Contact, Follow-up Timeframe (days), and follow-up reminders. These are stored in a **land-dev extension** linked to core.contacts.
 - **Two flows:**
   - **Edit / add land-dev info for an existing contact:** User picks someone from the list (from core) and adds or edits the land-dev–only fields. Backend creates or updates the extension row for that core contact.
   - **Create a new contact:** User creates a contact in Land Dev; backend creates the individual in **core.contacts** with only the fields core accepts (e.g. Name, Email, Phone), then creates the land-dev extension row with the rest. So new contacts are “sent up” to core with just core info; land-dev holds the extra attributes.
@@ -180,63 +181,6 @@ or both:
 
 ---
 
-### Email setup (for send-reminder)
-
-For **POST send-reminder** to actually send emails, the backend must be configured with a mailer.
-
-- **Render:** If the backend is deployed on Render, set these in the service **Environment** (Encrypted env vars for secrets):
-  - `SMTP_HOST` – mail server hostname
-  - `SMTP_PORT` – e.g. 587 (TLS) or 465 (SSL)
-  - `SMTP_USER` – auth username
-  - `SMTP_PASSWORD` or `SMTP_PASS` – use an **Encrypted** env var for the password
-  - `MAIL_FROM` – sender address (e.g. `noreply@yourdomain.com`)
-- **Security:** Use TLS for SMTP (port 587 or 465). Never put credentials in the frontend or in repo. Require the same auth (e.g. JWT) for the send-reminder endpoint so only authenticated users can trigger emails.
-
-If your app already has email (e.g. for notifications), reuse that mailer for send-reminder.
-
----
-
-### Email templates (reminder & notifications)
-
-Build HTML email templates so reminder and notification emails match the app’s look and stay secure.
-
-- **Styled like app notifications:** Use the same visual language as the dashboard (e.g. STOA primary green `#7e8a6b`, white background, clear typography). Use **inline CSS** in the HTML email (many clients strip `<style>` blocks). Example structure:
-  - Outer table or div with max-width ~600px, background `#ffffff`, border-radius 8px, border or shadow.
-  - Header: logo or app name, background `#7e8a6b` (primary green), white text, padding.
-  - Body: font family sans-serif, font-size 14–16px, color `#1f2937` (text primary), line-height 1.5.
-  - Button/CTA: background `#7e8a6b`, color white, padding 10px 16px, border-radius 4px.
-  - Footer: smaller text, color `#6b7280` (secondary).
-- **Encrypted and secure:**
-  - Send over **TLS** (SMTP over TLS); do not send credentials or tokens in the email body.
-  - Do not include sensitive data (passwords, full tokens) in templates; use links with short-lived tokens if needed.
-  - Sanitize any user-provided or contact data (e.g. `message`) before inserting into HTML to avoid injection.
-- **Example reminder subject/body:** Subject like “Follow-up reminder: [Contact Name]”. Body: “You asked to follow up with [Name]. [Optional custom message].” Use the template wrapper above so it matches the app’s notification styling.
-
-Store templates as server-side files or strings (e.g. Handlebars/Mustache with safe escaping); do not load templates from the client.
-
-**Example HTML reminder (inline CSS, STOA styling):**
-
-```html
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f5f5f5;padding:24px;">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-    <div style="background:#7e8a6b;color:#ffffff;padding:16px 20px;font-size:18px;font-weight:600;">Deal Pipeline – Follow-up reminder</div>
-    <div style="padding:20px;color:#1f2937;font-size:15px;line-height:1.6;">
-      <p style="margin:0 0 12px;">You asked to follow up with <strong>{{contactName}}</strong>.</p>
-      {{#if message}}<p style="margin:0;color:#6b7280;">{{message}}</p>{{/if}}
-    </div>
-    <div style="padding:12px 20px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;">Land Development · STOA Group</div>
-  </div>
-</body>
-</html>
-```
-
-Replace `{{contactName}}` and `{{message}}` with escaped values. Use TLS for delivery; keep SMTP credentials in Render env (encrypted).
-
----
-
 ## 4. Frontend Usage (for API client)
 
 - **List:** GET with optional `type`, `city`, `state`, `upcomingOnly`, `q`. Each item has **ContactId** (core id) and merged core + land-dev fields.
@@ -265,6 +209,7 @@ This keeps a single source of truth for individuals in core.contacts and adds la
 
 ## 6. Backend implementation notes (this repo)
 
-- **core.contacts** is implemented as **core.Person**. **ContactId** = **core.Person.PersonId**. **Individuals only** is satisfied because **core.Person** holds only people (no entity rows).
-- Extension table: **pipeline.LandDevelopmentContactExtension** (ContactId FK → core.Person.PersonId). Schema: `schema/add_land_development_contact_extension.sql`.
-- List/create/update/delete/send-reminder: as in §3. Delete returns `"Land development attributes removed"`. Send-reminder uses **SMTP_PASS** or **SMTP_PASSWORD**; sends both plain-text and **HTML** reminder (STOA styling `#7e8a6b`, inline CSS) with escaped `contactName` and `message` to avoid injection.
+- **core.contacts** in this guide is implemented as **core.Person**. **ContactId** in the API is **core.Person.PersonId**. **Individuals only** is satisfied because **core.Person** holds only people (no entity rows); there is no separate contacts table that mixes individuals and entities, so no extra filter is needed.
+- Core fields are mapped as: Name ← FullName, Email ← Email, PhoneNumber ← Phone.
+- The extension table is **pipeline.LandDevelopmentContactExtension** (ContactId PK/FK → core.Person.PersonId). Schema: `schema/add_land_development_contact_extension.sql`. Legacy **pipeline.LandDevelopmentContact** is dropped by that script or by `schema/cleanup_unused_objects.sql`.
+- List: `core.Person` LEFT JOIN `pipeline.LandDevelopmentContactExtension`; create: insert Person then extension; update: both (upsert extension); delete: extension row only, response `"Land development attributes removed"`. Send-reminder resolves email from Person by ContactId (PersonId).

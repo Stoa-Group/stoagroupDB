@@ -29,6 +29,39 @@ function addComputedFields(rows: any[]): any[] {
 
 const ALLOWED_TYPES = ['Land Owner', 'Developer', 'Broker'];
 
+/** Escape for safe use in HTML (prevents injection). */
+function escapeHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Build STOA-styled HTML reminder body (inline CSS). */
+function buildReminderHtml(contactName: string, customMessage: string | null): string {
+  const name = escapeHtml(contactName);
+  const msg = customMessage ? escapeHtml(customMessage) : '';
+  const messageBlock = msg
+    ? `<p style="margin:0;color:#6b7280;">${msg}</p>`
+    : '';
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f5f5f5;padding:24px;">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+    <div style="background:#7e8a6b;color:#ffffff;padding:16px 20px;font-size:18px;font-weight:600;">Deal Pipeline – Follow-up reminder</div>
+    <div style="padding:20px;color:#1f2937;font-size:15px;line-height:1.6;">
+      <p style="margin:0 0 12px;">You asked to follow up with <strong>${name}</strong>.</p>
+      ${messageBlock}
+    </div>
+    <div style="padding:12px 20px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;">Land Development · STOA Group</div>
+  </div>
+</body>
+</html>`;
+}
+
 export const getAllLandDevelopmentContacts = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { type, city, state, upcomingOnly, q } = req.query as { type?: string; city?: string; state?: string; upcomingOnly?: string; q?: string };
@@ -290,7 +323,7 @@ export const sendLandDevelopmentReminder = async (req: Request, res: Response, n
     if (!smtpHost || !mailFrom) {
       res.status(503).json({
         success: false,
-        error: { message: 'Email not configured. Set SMTP_HOST, MAIL_FROM (and optionally SMTP_USER, SMTP_PASS) to send reminders.' }
+        error: { message: 'Email not configured. Set SMTP_HOST, MAIL_FROM (and optionally SMTP_USER, SMTP_PASS or SMTP_PASSWORD) to send reminders.' }
       });
       return;
     }
@@ -303,17 +336,21 @@ export const sendLandDevelopmentReminder = async (req: Request, res: Response, n
         port,
         secure: process.env.SMTP_SECURE === 'true',
         requireTLS: port === 587,
-        auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || '' } : undefined,
+        auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '' } : undefined,
       });
-      const subject = contactName ? `Reminder: follow up with ${contactName}` : 'Follow-up reminder';
-      const textBody = message && String(message).trim()
-        ? String(message).trim()
+      const subject = contactName ? `Follow-up reminder: ${contactName}` : 'Follow-up reminder';
+      const customMessage = message && String(message).trim() ? String(message).trim() : null;
+      const textBody = customMessage
+        ? customMessage
         : (contactName ? `You asked to follow up with ${contactName}.` : `You asked to follow up with ${toEmail}.`);
+      const displayName = contactName || toEmail;
+      const htmlBody = buildReminderHtml(displayName, customMessage);
       await transporter.sendMail({
         from: mailFrom,
         to: toEmail,
         subject,
         text: textBody,
+        html: htmlBody,
       });
     } catch (mailError: any) {
       console.error('Land development reminder send failed:', mailError);
