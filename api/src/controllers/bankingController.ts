@@ -17,6 +17,12 @@ import {
 // LOAN CONTROLLER
 // ============================================================
 
+/** Coerce value to string or null for NVarChar params (driver rejects non-strings). */
+function toVarChar(val: unknown): string | null {
+  if (val == null || val === '') return null;
+  return String(val);
+}
+
 export const getAllLoans = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await getConnection();
@@ -194,39 +200,39 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
     const request = pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('BirthOrder', sql.Int, BirthOrder)
-      .input('LoanType', sql.NVarChar, LoanType)
-      .input('Borrower', sql.NVarChar, Borrower)
-      .input('LoanPhase', sql.NVarChar, LoanPhase)
-      .input('FinancingStage', sql.NVarChar, FinancingStage)
+      .input('LoanType', sql.NVarChar, toVarChar(LoanType))
+      .input('Borrower', sql.NVarChar, toVarChar(Borrower))
+      .input('LoanPhase', sql.NVarChar, toVarChar(LoanPhase))
+      .input('FinancingStage', sql.NVarChar, toVarChar(FinancingStage))
       .input('LenderId', sql.Int, LenderId)
       .input('LoanAmount', sql.Decimal(18, 2), LoanAmount)
       .input('LoanClosingDate', sql.Date, LoanClosingDate)
       .input('MaturityDate', sql.Date, MaturityDate)
-      .input('FixedOrFloating', sql.NVarChar, FixedOrFloating)
-      .input('IndexName', sql.NVarChar, IndexName)
-      .input('Spread', sql.NVarChar, Spread)
-      .input('InterestRate', sql.NVarChar, InterestRate)
-      .input('InterestRateFloor', sql.NVarChar, InterestRateFloor)
-      .input('InterestRateCeiling', sql.NVarChar, InterestRateCeiling)
+      .input('FixedOrFloating', sql.NVarChar, toVarChar(FixedOrFloating))
+      .input('IndexName', sql.NVarChar, toVarChar(IndexName))
+      .input('Spread', sql.NVarChar, toVarChar(Spread))
+      .input('InterestRate', sql.NVarChar, toVarChar(InterestRate))
+      .input('InterestRateFloor', sql.NVarChar, toVarChar(InterestRateFloor))
+      .input('InterestRateCeiling', sql.NVarChar, toVarChar(InterestRateCeiling))
       .input('ConversionDate', sql.Date, ConversionDate)
       .input('IsActive', sql.Bit, IsActive === true || IsActive === 1)
       .input('IsPrimary', sql.Bit, IsPrimary === true || IsPrimary === 1)
       .input('MiniPermMaturity', sql.Date, MiniPermMaturity)
-      .input('MiniPermInterestRate', sql.NVarChar, MiniPermInterestRate)
-      .input('MiniPermFixedOrFloating', sql.NVarChar, MiniPermFixedOrFloating)
-      .input('MiniPermIndex', sql.NVarChar, MiniPermIndex)
-      .input('MiniPermSpread', sql.NVarChar, MiniPermSpread)
-      .input('MiniPermRateFloor', sql.NVarChar, MiniPermRateFloor)
-      .input('MiniPermRateCeiling', sql.NVarChar, MiniPermRateCeiling)
+      .input('MiniPermInterestRate', sql.NVarChar, toVarChar(MiniPermInterestRate))
+      .input('MiniPermFixedOrFloating', sql.NVarChar, toVarChar(MiniPermFixedOrFloating))
+      .input('MiniPermIndex', sql.NVarChar, toVarChar(MiniPermIndex))
+      .input('MiniPermSpread', sql.NVarChar, toVarChar(MiniPermSpread))
+      .input('MiniPermRateFloor', sql.NVarChar, toVarChar(MiniPermRateFloor))
+      .input('MiniPermRateCeiling', sql.NVarChar, toVarChar(MiniPermRateCeiling))
       .input('PermPhaseMaturity', sql.Date, PermPhaseMaturity)
-      .input('PermPhaseInterestRate', sql.NVarChar, PermPhaseInterestRate)
-      .input('ConstructionCompletionDate', sql.NVarChar, ConstructionCompletionDate)
-      .input('ConstructionCompletionSource', sql.NVarChar, ConstructionCompletionSource)
-      .input('LeaseUpCompletedDate', sql.NVarChar, LeaseUpCompletedDate)
+      .input('PermPhaseInterestRate', sql.NVarChar, toVarChar(PermPhaseInterestRate))
+      .input('ConstructionCompletionDate', sql.NVarChar, toVarChar(ConstructionCompletionDate))
+      .input('ConstructionCompletionSource', sql.NVarChar, toVarChar(ConstructionCompletionSource))
+      .input('LeaseUpCompletedDate', sql.NVarChar, toVarChar(LeaseUpCompletedDate))
       .input('IOMaturityDate', sql.Date, IOMaturityDate)
       .input('PermanentCloseDate', sql.Date, PermanentCloseDate)
       .input('PermanentLoanAmount', sql.Decimal(18, 2), PermanentLoanAmount)
-      .input('Notes', sql.NVarChar(sql.MAX), Notes);
+      .input('Notes', sql.NVarChar(sql.MAX), toVarChar(Notes));
 
     // Insert without OUTPUT clause (triggers prevent OUTPUT INSERTED.*)
     await request.query(`
@@ -356,15 +362,15 @@ export const updateLoan = async (req: Request, res: Response, next: NextFunction
         } else if (key === 'InterestRateFloor' || key === 'InterestRateCeiling' ||
             key === 'MiniPermFixedOrFloating' || key === 'MiniPermIndex' || key === 'MiniPermSpread' ||
             key === 'MiniPermRateFloor' || key === 'MiniPermRateCeiling') {
-          request.input(key, sql.NVarChar, loanData[key]);
+          request.input(key, sql.NVarChar, toVarChar(loanData[key]));
         } else if (typeof loanData[key] === 'number' && key.includes('Amount')) {
           request.input(key, sql.Decimal(18, 2), loanData[key]);
         } else if (key.includes('Date') && !key.includes('Completion') && !key.includes('Completed')) {
           request.input(key, sql.Date, loanData[key]);
         } else if (key === 'Notes') {
-          request.input(key, sql.NVarChar(sql.MAX), loanData[key]);
+          request.input(key, sql.NVarChar(sql.MAX), toVarChar(loanData[key]));
         } else {
-          request.input(key, sql.NVarChar, loanData[key]);
+          request.input(key, sql.NVarChar, toVarChar(loanData[key]));
         }
       }
     });
