@@ -1,0 +1,66 @@
+# Sync api-client.js to other Stoa Group repos when it changes in stoagroupDB.
+#
+# Setup: In this repo go to Settings → Secrets and variables → Actions.
+# Add a secret named REPO_ACCESS_TOKEN: a GitHub PAT with repo scope (or
+# fine-grained with push access to Land-Development-Pipeline, banking-dashboard,
+# leasing-analytics-hub).
+#
+# Target path: This workflow copies api-client.js to the repo root. If a repo
+# keeps it elsewhere (e.g. public/api-client.js), edit the "cp" and "git add"
+# lines for that step.
+
+name: Sync API client to other repos
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api-client.js'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout stoagroupDB
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync to Land-Development-Pipeline
+        env:
+          REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${REPO_ACCESS_TOKEN}@github.com/Stoa-Group/Land-Development-Pipeline.git" target
+          cp api-client.js target/api-client.js
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add api-client.js
+          git diff --staged --quiet || (git commit -m "chore: sync api-client.js from stoagroupDB" && git push)
+          cd .. && rm -rf target
+
+      - name: Sync to banking-dashboard
+        env:
+          REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${REPO_ACCESS_TOKEN}@github.com/Stoa-Group/banking-dashboard.git" target
+          cp api-client.js target/api-client.js
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add api-client.js
+          git diff --staged --quiet || (git commit -m "chore: sync api-client.js from stoagroupDB" && git push)
+          cd .. && rm -rf target
+
+      - name: Sync to leasing-analytics-hub
+        env:
+          REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${REPO_ACCESS_TOKEN}@github.com/Stoa-Group/leasing-analytics-hub.git" target
+          cp api-client.js target/api-client.js
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add api-client.js
+          git diff --staged --quiet || (git commit -m "chore: sync api-client.js from stoagroupDB" && git push)
+          cd .. && rm -rf target

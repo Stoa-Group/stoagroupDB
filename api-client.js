@@ -520,6 +520,15 @@
 }
 
 /**
+ * Get participation total vs loan amount for a loan (for mismatch flag)
+ * @param {number} id - Loan ID
+ * @returns {Promise<object>} { success: true, data: { loanId, loanAmount, participationTotal, participationActiveTotal, mismatch } }
+ */
+  async function getLoanParticipationSummary(id) {
+  return apiRequest(`/api/banking/loans/${id}/participation-summary`);
+}
+
+/**
  * Create a new loan (REQUIRES AUTHENTICATION)
  * @param {object} data - Loan data
  * @param {number} data.ProjectId - Required: Project ID
@@ -528,6 +537,9 @@
  * @param {string} [data.IndexName] - For Construction loans: 'Prime' or 'SOFR' (NULL allowed for Fixed rates)
  * @param {string} [data.Spread] - Spread value (e.g., "2.75%", "0.50%")
  * @param {string} [data.InterestRate] - Interest rate (for fixed rates or complex expressions)
+ * @param {string} [data.InterestRateFloor] - I/O rate floor (e.g. "0%")
+ * @param {string} [data.InterestRateCeiling] - I/O rate ceiling (e.g. "12%")
+ * @param {string} [data.ConversionDate] - I/O to P&I conversion date (YYYY-MM-DD)
  * @param {number} [data.LoanAmount] - Loan amount
  * @param {string} [data.LoanClosingDate] - Loan closing date (YYYY-MM-DD)
  * @param {string} [data.MaturityDate] - Maturity date (YYYY-MM-DD)
@@ -542,6 +554,13 @@
  * @param {string} [data.IOMaturityDate] - I/O maturity date (YYYY-MM-DD)
  * @param {string} [data.MiniPermMaturity] - Mini-perm maturity date (YYYY-MM-DD)
  * @param {string} [data.MiniPermInterestRate] - Mini-perm interest rate
+ * @param {string} [data.MiniPermFixedOrFloating] - Mini-perm: 'Fixed' or 'Floating'
+ * @param {string} [data.MiniPermIndex] - Mini-perm index (e.g. "SOFR", "Prime")
+ * @param {string} [data.MiniPermSpread] - Mini-perm spread (e.g. "2.50%")
+ * @param {string} [data.MiniPermRateFloor] - Mini-perm rate floor
+ * @param {string} [data.MiniPermRateCeiling] - Mini-perm rate ceiling
+ * @param {boolean} [data.IsActive] - Loan is active (default true)
+ * @param {boolean} [data.IsPrimary] - Loan is primary for project (default false)
  * @param {string} [data.PermPhaseMaturity] - Perm-phase maturity date (YYYY-MM-DD)
  * @param {string} [data.PermPhaseInterestRate] - Perm-phase interest rate
  * @param {string} [data.PermanentCloseDate] - Permanent close date (YYYY-MM-DD)
@@ -573,6 +592,9 @@
  * @param {string} [data.IndexName] - For Construction loans: 'Prime' or 'SOFR' (NULL allowed for Fixed rates)
  * @param {string} [data.Spread] - Spread value (e.g., "2.75%", "0.50%")
  * @param {string} [data.InterestRate] - Interest rate
+ * @param {string} [data.InterestRateFloor] - I/O rate floor
+ * @param {string} [data.InterestRateCeiling] - I/O rate ceiling
+ * @param {string} [data.ConversionDate] - I/O to P&I conversion date (YYYY-MM-DD)
  * @param {number} [data.LoanAmount] - Loan amount
  * @param {string} [data.LoanClosingDate] - Loan closing date (YYYY-MM-DD)
  * @param {string} [data.MaturityDate] - Maturity date (YYYY-MM-DD)
@@ -588,10 +610,17 @@
  * @param {string} [data.IOMaturityDate] - I/O maturity date
  * @param {string} [data.MiniPermMaturity] - Mini-perm maturity date
  * @param {string} [data.MiniPermInterestRate] - Mini-perm interest rate
+ * @param {string} [data.MiniPermFixedOrFloating] - Mini-perm: 'Fixed' or 'Floating'
+ * @param {string} [data.MiniPermIndex] - Mini-perm index
+ * @param {string} [data.MiniPermSpread] - Mini-perm spread
+ * @param {string} [data.MiniPermRateFloor] - Mini-perm rate floor
+ * @param {string} [data.MiniPermRateCeiling] - Mini-perm rate ceiling
  * @param {string} [data.PermPhaseMaturity] - Perm-phase maturity date
  * @param {string} [data.PermPhaseInterestRate] - Perm-phase interest rate
  * @param {string} [data.PermanentCloseDate] - Permanent close date
  * @param {number} [data.PermanentLoanAmount] - Permanent loan amount
+ * @param {boolean} [data.IsActive] - Loan is active
+ * @param {boolean} [data.IsPrimary] - Loan is primary for project
  * @param {string} [data.Notes] - Notes
  * @returns {Promise<object>} { success: true, data: { LoanId, ... } }
  * @example
@@ -2120,11 +2149,55 @@
 
 /**
  * Get download URL for a banking file.
+ * NOTE: Opening this URL in a new tab will NOT send the auth token, so the API will return 401.
+ * Use downloadBankingFile(attachmentId) instead to open/view with your current token.
  * @param {number} attachmentId - BankingFileId
  * @returns {string} Full URL to download endpoint
  */
   function getBankingFileDownloadUrl(attachmentId) {
   return `${API_BASE_URL}/api/banking/files/${attachmentId}/download`;
+}
+
+/**
+ * Download or open a banking file using the current auth token (for use when user clicks the file).
+ * Fetches with Bearer token, then opens the file in a new tab (or triggers download with filename).
+ * @param {number} attachmentId - BankingFileId
+ * @param {{ openInNewTab?: boolean }} options - openInNewTab: true = open in new tab (default); false = trigger download with filename
+ * @returns {Promise<void>}
+ */
+  async function downloadBankingFile(attachmentId, options = {}) {
+  const { openInNewTab = true } = options;
+  const token = authToken;
+  if (!token) {
+    throw new Error('Not authenticated. Call login() or setAuthToken() before downloading files.');
+  }
+  const response = await fetch(`${API_BASE_URL}/api/banking/files/${attachmentId}/download`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Download failed: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const filename = (response.headers.get('Content-Disposition') || '').match(/filename\*?=(?:UTF-8'')?["']?([^"'\s;]+)["']?/i)?.[1]
+    || response.headers.get('X-File-Name')
+    || `banking-file-${attachmentId}`;
+  const blobUrl = URL.createObjectURL(blob);
+  if (openInNewTab) {
+    const w = window.open(blobUrl, '_blank');
+    if (w) setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+    else { URL.revokeObjectURL(blobUrl); throw new Error('Popup blocked. Allow popups or use download: false.'); }
+  } else {
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = decodeURIComponent(filename);
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 500);
+  }
 }
 
 /**
@@ -2294,6 +2367,7 @@
   API.getAllLoans = getAllLoans;
   API.getLoanById = getLoanById;
   API.getLoansByProject = getLoansByProject;
+  API.getLoanParticipationSummary = getLoanParticipationSummary;
   API.createLoan = createLoan;
   API.updateLoan = updateLoan;
   API.updateLoanByProject = updateLoanByProject;
@@ -2439,6 +2513,7 @@
   API.listBankingFiles = listBankingFiles;
   API.uploadBankingFile = uploadBankingFile;
   API.getBankingFileDownloadUrl = getBankingFileDownloadUrl;
+  API.downloadBankingFile = downloadBankingFile;
   API.deleteBankingFile = deleteBankingFile;
 
   // IMS Investor Resolution

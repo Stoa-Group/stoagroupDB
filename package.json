@@ -1,0 +1,7 @@
+{
+  "name": "stoagroup-api-client",
+  "version": "1.0.0",
+  "description": "API client for STOA Group Database (used by Domo dashboards and other repos). Single file: api-client.js.",
+  "main": "api-client.js",
+  "private": true
+}
