@@ -2069,6 +2069,66 @@ export const getBankingEmailTemplates = async (_req: Request, res: Response, nex
   }
 };
 
+const UPCOMING_DATES_REMINDER_SETTINGS_KEY = 'upcoming-dates-reminders';
+const DEFAULT_UPCOMING_DATES_SETTINGS = { recipientEmails: [] as string[], additionalEmails: '', daysBefore: [] as number[] };
+
+export const getUpcomingDatesReminderSettings = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input('key', sql.NVarChar(100), UPCOMING_DATES_REMINDER_SETTINGS_KEY)
+      .query('SELECT SettingValue FROM banking.AppSettings WHERE SettingKey = @key');
+    if (result.recordset.length === 0 || result.recordset[0].SettingValue == null) {
+      res.json({ success: true, data: DEFAULT_UPCOMING_DATES_SETTINGS });
+      return;
+    }
+    try {
+      const data = JSON.parse(result.recordset[0].SettingValue as string);
+      res.json({
+        success: true,
+        data: {
+          recipientEmails: Array.isArray(data.recipientEmails) ? data.recipientEmails : [],
+          additionalEmails: typeof data.additionalEmails === 'string' ? data.additionalEmails : '',
+          daysBefore: Array.isArray(data.daysBefore) ? data.daysBefore : [],
+        },
+      });
+    } catch {
+      res.json({ success: true, data: DEFAULT_UPCOMING_DATES_SETTINGS });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const saveUpcomingDatesReminderSettings = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { recipientEmails, additionalEmails, daysBefore } = req.body as {
+      recipientEmails?: string[];
+      additionalEmails?: string;
+      daysBefore?: number[];
+    };
+    const payload = {
+      recipientEmails: Array.isArray(recipientEmails) ? recipientEmails : [],
+      additionalEmails: typeof additionalEmails === 'string' ? additionalEmails : '',
+      daysBefore: Array.isArray(daysBefore) ? daysBefore : [],
+    };
+    const pool = await getConnection();
+    await pool.request()
+      .input('key', sql.NVarChar(100), UPCOMING_DATES_REMINDER_SETTINGS_KEY)
+      .input('value', sql.NVarChar(sql.MAX), JSON.stringify(payload))
+      .query(`
+        MERGE banking.AppSettings AS t
+        USING (SELECT @key AS SettingKey, @value AS SettingValue) AS s
+        ON t.SettingKey = s.SettingKey
+        WHEN MATCHED THEN UPDATE SET SettingValue = s.SettingValue, UpdatedAt = SYSDATETIME()
+        WHEN NOT MATCHED THEN INSERT (SettingKey, SettingValue) VALUES (s.SettingKey, s.SettingValue);
+      `);
+    res.json({ success: true, data: payload });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const COVENANT_REMINDER_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Covenant Reminder</title></head>

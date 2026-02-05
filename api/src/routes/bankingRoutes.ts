@@ -56,6 +56,10 @@ router.delete('/guarantees/:id', authenticate, bankingController.deleteGuarantee
 // Banking email templates (bankingnotificationguide)
 router.get('/email-templates', bankingController.getBankingEmailTemplates);
 
+// Upcoming dates reminder settings (BACKEND-GUIDE-UPCOMING-DATES-REMINDERS)
+router.get('/settings/upcoming-dates-reminders', bankingController.getUpcomingDatesReminderSettings);
+router.put('/settings/upcoming-dates-reminders', authenticate, bankingController.saveUpcomingDatesReminderSettings);
+
 // Covenant routes
 router.get('/covenants', bankingController.getAllCovenants);
 router.get('/covenants/project/:projectId', bankingController.getCovenantsByProject);
