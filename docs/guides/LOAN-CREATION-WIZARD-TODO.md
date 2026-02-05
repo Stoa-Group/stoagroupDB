@@ -52,4 +52,13 @@ Use this with the backend and api-client guides. Backend: **BACKEND-GUIDE-LOAN-C
 ## Dependencies
 
 - Backend: loan types table + CRUD, copy-from-loan endpoint(s), IsActive behavior (see backend guide).
-- API client: getLoanTypes, createLoanType, copyCovenantsToLoan (or copyLoanAttributes), setLoanActive (see api-client guide).
+- API client: getLoanTypes, createLoanType, copyLoanAttributes, setLoanActive, createLoan, getLoansByProject, updateLoan (see api-client guide).
+
+**Before opening the wizard:** Call `API.checkLoanWizardReady()`. If `ready` is false, `missing` lists absent method names—prompt the user to update api-client or ensure the backend is deployed. Example:
+```javascript
+const cap = API.checkLoanWizardReady();
+if (!cap.ready) {
+  alert('Loan creation wizard is not available. Missing: ' + cap.missing.join(', '));
+  return;
+}
+```
