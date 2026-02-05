@@ -162,7 +162,7 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
   try {
     const {
       ProjectId, BirthOrder, LoanType, Borrower, LoanPhase, FinancingStage, LenderId,
-      LoanAmount, LoanClosingDate, MaturityDate, FixedOrFloating, IndexName,
+      LoanAmount, CurrentBalance, LoanClosingDate, MaturityDate, FixedOrFloating, IndexName,
       Spread, InterestRate, InterestRateFloor, InterestRateCeiling,
       ConversionDate,
       MiniPermMaturity, MiniPermInterestRate,
@@ -206,6 +206,7 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
       .input('FinancingStage', sql.NVarChar, toVarChar(FinancingStage))
       .input('LenderId', sql.Int, LenderId)
       .input('LoanAmount', sql.Decimal(18, 2), LoanAmount)
+      .input('CurrentBalance', sql.Decimal(18, 2), CurrentBalance)
       .input('LoanClosingDate', sql.Date, LoanClosingDate)
       .input('MaturityDate', sql.Date, MaturityDate)
       .input('FixedOrFloating', sql.NVarChar, toVarChar(FixedOrFloating))
@@ -234,11 +235,11 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
       .input('PermanentLoanAmount', sql.Decimal(18, 2), PermanentLoanAmount)
       .input('Notes', sql.NVarChar(sql.MAX), toVarChar(Notes));
 
-    // Insert and select in same batch so SCOPE_IDENTITY() is visible (connection pooling)
-    const result = await request.query(`
+    // Insert and get new LoanId via OUTPUT, then fetch full row (avoids multi-recordset ordering issues)
+    const insertResult = await request.query(`
       INSERT INTO banking.Loan (
         ProjectId, BirthOrder, LoanType, Borrower, LoanPhase, FinancingStage, LenderId,
-        LoanAmount, LoanClosingDate, MaturityDate, FixedOrFloating, IndexName,
+        LoanAmount, CurrentBalance, LoanClosingDate, MaturityDate, FixedOrFloating, IndexName,
         Spread, InterestRate, InterestRateFloor, InterestRateCeiling,
         ConversionDate,
         MiniPermMaturity, MiniPermInterestRate,
@@ -247,9 +248,10 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
         ConstructionCompletionSource, LeaseUpCompletedDate, IOMaturityDate, PermanentCloseDate,
         PermanentLoanAmount, Notes, IsActive, IsPrimary
       )
+      OUTPUT INSERTED.LoanId
       VALUES (
         @ProjectId, @BirthOrder, @LoanType, @Borrower, @LoanPhase, @FinancingStage, @LenderId,
-        @LoanAmount, @LoanClosingDate, @MaturityDate, @FixedOrFloating, @IndexName,
+        @LoanAmount, @CurrentBalance, @LoanClosingDate, @MaturityDate, @FixedOrFloating, @IndexName,
         @Spread, @InterestRate, @InterestRateFloor, @InterestRateCeiling,
         @ConversionDate,
         @MiniPermMaturity, @MiniPermInterestRate,
@@ -258,22 +260,30 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
         @ConstructionCompletionSource, @LeaseUpCompletedDate, @IOMaturityDate, @PermanentCloseDate,
         @PermanentLoanAmount, @Notes, @IsActive, @IsPrimary
       );
-      SELECT 
-        l.*,
-        CASE 
-          WHEN l.IOMaturityDate IS NOT NULL AND l.LoanClosingDate IS NOT NULL 
-          THEN DATEDIFF(MONTH, l.LoanClosingDate, l.IOMaturityDate)
-          WHEN l.MaturityDate IS NOT NULL AND l.LoanClosingDate IS NOT NULL 
-          THEN DATEDIFF(MONTH, l.LoanClosingDate, l.MaturityDate)
-          ELSE NULL
-        END AS ConstructionIOTermMonths
-      FROM banking.Loan l
-      WHERE l.LoanId = SCOPE_IDENTITY();
     `);
+    const newLoanId = insertResult.recordset?.[0]?.LoanId;
+    if (newLoanId == null) {
+      res.status(500).json({ success: false, error: { message: 'Failed to retrieve created loan' } });
+      return;
+    }
 
-    const secondSet = result.recordsets && Array.isArray(result.recordsets) ? result.recordsets[1] : undefined;
-    const created = (secondSet && secondSet[0]) ? secondSet[0] : (result.recordset && result.recordset[0]) ? result.recordset[0] : null;
-    if (!created || created.LoanId == null) {
+    const fetchResult = await pool.request()
+      .input('loanId', sql.Int, newLoanId)
+      .query(`
+        SELECT 
+          l.*,
+          CASE 
+            WHEN l.IOMaturityDate IS NOT NULL AND l.LoanClosingDate IS NOT NULL 
+            THEN DATEDIFF(MONTH, l.LoanClosingDate, l.IOMaturityDate)
+            WHEN l.MaturityDate IS NOT NULL AND l.LoanClosingDate IS NOT NULL 
+            THEN DATEDIFF(MONTH, l.LoanClosingDate, l.MaturityDate)
+            ELSE NULL
+          END AS ConstructionIOTermMonths
+        FROM banking.Loan l
+        WHERE l.LoanId = @loanId
+      `);
+    const created = fetchResult.recordset?.[0] ?? null;
+    if (!created) {
       res.status(500).json({ success: false, error: { message: 'Failed to retrieve created loan' } });
       return;
     }
@@ -361,7 +371,7 @@ export const updateLoan = async (req: Request, res: Response, next: NextFunction
             key === 'MiniPermFixedOrFloating' || key === 'MiniPermIndex' || key === 'MiniPermSpread' ||
             key === 'MiniPermRateFloor' || key === 'MiniPermRateCeiling') {
           request.input(key, sql.NVarChar, toVarChar(loanData[key]));
-        } else if (typeof loanData[key] === 'number' && key.includes('Amount')) {
+        } else if (key === 'CurrentBalance' || (typeof loanData[key] === 'number' && key.includes('Amount'))) {
           request.input(key, sql.Decimal(18, 2), loanData[key]);
         } else if (key.includes('Date') && !key.includes('Completion') && !key.includes('Completed')) {
           request.input(key, sql.Date, loanData[key]);
@@ -613,9 +623,46 @@ export const deleteLoan = async (req: Request, res: Response, next: NextFunction
   try {
     const { id } = req.params;
     const pool = await getConnection();
-    const result = await pool.request()
-      .input('id', sql.Int, id)
-      .query('DELETE FROM banking.Loan WHERE LoanId = @id');
+    const loanId = parseInt(id, 10);
+    if (isNaN(loanId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid loan id' } });
+      return;
+    }
+
+    // Block only when loan has covenants, guarantees, or equity commitments; cascade participations.
+    const check = await pool.request()
+      .input('loanId', sql.Int, loanId)
+      .query(`
+        SELECT 
+          (SELECT COUNT(*) FROM banking.Covenant WHERE LoanId = @loanId) AS CovenantCount,
+          (SELECT COUNT(*) FROM banking.Guarantee WHERE LoanId = @loanId) AS GuaranteeCount,
+          (SELECT COUNT(*) FROM banking.Loan WHERE LoanId = @loanId) AS LoanExists
+      `);
+    const row = check.recordset?.[0];
+    if (!row || !row.LoanExists) {
+      res.status(404).json({ success: false, error: { message: 'Loan not found' } });
+      return;
+    }
+    const covenantCount = row.CovenantCount ?? 0;
+    const guaranteeCount = row.GuaranteeCount ?? 0;
+    const associations: string[] = [];
+    if (covenantCount > 0) associations.push('covenants');
+    if (guaranteeCount > 0) associations.push('personal guarantees');
+    if (associations.length > 0) {
+      res.status(409).json({
+        success: false,
+        error: {
+          message: `Cannot delete loan: it has ${associations.join(' and ')}. Remove or reassign them first.`,
+          code: 'LOAN_HAS_ASSOCIATIONS',
+          associations
+        }
+      });
+      return;
+    }
+
+    // Delete participations for this loan, then the loan
+    await pool.request().input('loanId', sql.Int, loanId).query('DELETE FROM banking.Participation WHERE LoanId = @loanId');
+    const result = await pool.request().input('loanId', sql.Int, loanId).query('DELETE FROM banking.Loan WHERE LoanId = @loanId');
 
     if (result.rowsAffected[0] === 0) {
       res.status(404).json({ success: false, error: { message: 'Loan not found' } });
@@ -624,10 +671,6 @@ export const deleteLoan = async (req: Request, res: Response, next: NextFunction
 
     res.json({ success: true, message: 'Loan deleted successfully' });
   } catch (error: any) {
-    if (error.number === 547) {
-      res.status(409).json({ success: false, error: { message: 'Cannot delete loan with associated records' } });
-      return;
-    }
     next(error);
   }
 };
@@ -1281,8 +1324,10 @@ export const updateParticipation = async (req: Request, res: Response, next: Nex
           request.input(key, sql.Int, participationData[key]);
         } else if (key === 'ExposureAmount') {
           request.input(key, sql.Decimal(18, 2), participationData[key]);
-        } else if (key === 'PaidOff') {
-          request.input(key, sql.Bit, participationData[key]);
+        } else if (key === 'PaidOff' || key === 'IsLead') {
+          // Accept boolean or "true"/"false" string for BIT columns
+          const val = participationData[key];
+          request.input(key, sql.Bit, val === true || val === 1 || (typeof val === 'string' && val.toLowerCase() === 'true'));
         } else if (key === 'Notes') {
           request.input(key, sql.NVarChar(sql.MAX), participationData[key]);
         } else {
@@ -1774,9 +1819,7 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
       // Other fields (legacy)
       CovenantDate, Requirement, ProjectedValue,
       Notes,
-      IsCompleted,
-      ReminderEmails,
-      ReminderDaysBefore
+      IsCompleted
     } = req.body;
 
     if (!ProjectId || !CovenantType) {
@@ -1825,11 +1868,10 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
       .input('Requirement', sql.NVarChar, Requirement)
       .input('ProjectedValue', sql.NVarChar, ProjectedValue)
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
-      .input('IsCompleted', sql.Bit, IsCompleted !== undefined ? IsCompleted : false)
-      .input('ReminderEmails', sql.NVarChar(sql.MAX), reminderEmailsToDb(ReminderEmails))
-      .input('ReminderDaysBefore', sql.NVarChar(100), reminderDaysBeforeToDb(ReminderDaysBefore));
+      .input('IsCompleted', sql.Bit, IsCompleted !== undefined ? IsCompleted : false);
 
     // Insert without OUTPUT clause (triggers prevent OUTPUT INSERTED.*)
+    // ReminderEmails/ReminderDaysBefore omitted: optional columns; use global reminder settings.
     await request.query(`
       INSERT INTO banking.Covenant (
         ProjectId, LoanId, FinancingType, CovenantType,
@@ -1837,7 +1879,7 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
         OccupancyCovenantDate, OccupancyRequirement, ProjectedOccupancy,
         LiquidityRequirementLendingBank,
         CovenantDate, Requirement, ProjectedValue,
-        Notes, IsCompleted, ReminderEmails, ReminderDaysBefore
+        Notes, IsCompleted
       )
       VALUES (
         @ProjectId, @LoanId, @FinancingType, @CovenantType,
@@ -1845,7 +1887,7 @@ export const createCovenant = async (req: Request, res: Response, next: NextFunc
         @OccupancyCovenantDate, @OccupancyRequirement, @ProjectedOccupancy,
         @LiquidityRequirementLendingBank,
         @CovenantDate, @Requirement, @ProjectedValue,
-        @Notes, @IsCompleted, @ReminderEmails, @ReminderDaysBefore
+        @Notes, @IsCompleted
       )
     `);
 
@@ -1887,9 +1929,7 @@ export const createCovenantByProject = async (req: Request, res: Response, next:
       // Other fields (legacy)
       CovenantDate, Requirement, ProjectedValue,
       Notes,
-      IsCompleted,
-      ReminderEmails,
-      ReminderDaysBefore
+      IsCompleted
     } = req.body;
 
     if (!CovenantType) {
@@ -1926,7 +1966,7 @@ export const createCovenantByProject = async (req: Request, res: Response, next:
 
     const loanId = findLoan.recordset[0].LoanId;
     
-    // Create the covenant
+    // Create the covenant (ReminderEmails/ReminderDaysBefore omitted: optional columns; use global reminder settings)
     const result = await pool.request()
       .input('ProjectId', sql.Int, projectId)
       .input('LoanId', sql.Int, loanId)
@@ -1948,8 +1988,6 @@ export const createCovenantByProject = async (req: Request, res: Response, next:
       .input('ProjectedValue', sql.NVarChar, ProjectedValue)
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .input('IsCompleted', sql.Bit, IsCompleted !== undefined ? IsCompleted : false)
-      .input('ReminderEmails', sql.NVarChar(sql.MAX), reminderEmailsToDb(ReminderEmails))
-      .input('ReminderDaysBefore', sql.NVarChar(100), reminderDaysBeforeToDb(ReminderDaysBefore))
       .query(`
         INSERT INTO banking.Covenant (
           ProjectId, LoanId, CovenantType,
@@ -1957,7 +1995,7 @@ export const createCovenantByProject = async (req: Request, res: Response, next:
           OccupancyCovenantDate, OccupancyRequirement, ProjectedOccupancy,
           LiquidityRequirementLendingBank,
           CovenantDate, Requirement, ProjectedValue,
-          Notes, IsCompleted, ReminderEmails, ReminderDaysBefore
+          Notes, IsCompleted
         )
         OUTPUT INSERTED.*
         VALUES (
@@ -1966,7 +2004,7 @@ export const createCovenantByProject = async (req: Request, res: Response, next:
           @OccupancyCovenantDate, @OccupancyRequirement, @ProjectedOccupancy,
           @LiquidityRequirementLendingBank,
           @CovenantDate, @Requirement, @ProjectedValue,
-          @Notes, @IsCompleted, @ReminderEmails, @ReminderDaysBefore
+          @Notes, @IsCompleted
         )
       `);
 
@@ -2004,6 +2042,10 @@ export const updateCovenant = async (req: Request, res: Response, next: NextFunc
     const fields: string[] = [];
     Object.keys(covenantData).forEach((key) => {
       if (key !== 'CovenantId' && covenantData[key] !== undefined) {
+        if (key === 'ReminderEmails' || key === 'ReminderDaysBefore') {
+          // Skip: optional columns not on Covenant table; reminder config is global
+          return;
+        }
         fields.push(`${key} = @${key}`);
         if (key === 'ProjectId' || key === 'LoanId') {
           request.input(key, sql.Int, covenantData[key]);
@@ -2013,10 +2055,6 @@ export const updateCovenant = async (req: Request, res: Response, next: NextFunc
           request.input(key, sql.Decimal(18, 2), covenantData[key]);
         } else if (key === 'IsCompleted') {
           request.input(key, sql.Bit, covenantData[key]);
-        } else if (key === 'ReminderEmails') {
-          request.input(key, sql.NVarChar(sql.MAX), reminderEmailsToDb(covenantData[key]));
-        } else if (key === 'ReminderDaysBefore') {
-          request.input(key, sql.NVarChar(100), reminderDaysBeforeToDb(covenantData[key]));
         } else if (key === 'Notes') {
           request.input(key, sql.NVarChar(sql.MAX), covenantData[key]);
         } else {

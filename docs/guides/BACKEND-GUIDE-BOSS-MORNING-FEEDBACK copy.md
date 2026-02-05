@@ -101,11 +101,11 @@ This document is for the **backend agent** and describes API/schema/data changes
 | 6 | Debt Structure tab / styling | Frontend only |
 | 7 | Duplicate Add Equity Commitment button | Frontend only |
 | 9 | Show other admins in edit mode | Add presence/heartbeat; GET/POST edit-mode |
-| 10 | Principal paydowns / current balance | Add CurrentBalance/OutstandingPrincipal; expose in loan API |
-| 11 | POST loans – "Failed to retrieve created loan" | Return created loan in response after INSERT |
-| 12 | Participation IsLead on PUT | Accept IsLead as boolean or "true"/"false" string |
-| 13 | Delete loan with associated records | Cascade delete or ?cascade=true; or structured error |
-| 14 | Covenant ReminderDaysBefore/ReminderEmails | No action (frontend no longer sends); optional columns later |
+| 10 | Principal paydowns / current balance | Add CurrentBalance; expose in loan GET/POST/PUT |
+| 11 | POST loans – return created loan | Return created loan in 201 response (OUTPUT + fetch) |
+| 12 | Participation IsLead on PUT | Accept IsLead as boolean or "true"/"false"; schema IsLead |
+| 13 | Delete loan (block only covenants/guarantees) | Cascade participations; block only on Covenant/Guarantee |
+| 14 | Covenant ReminderDaysBefore/ReminderEmails | No action (frontend no longer sends) |
 
 ---
 
@@ -114,6 +114,11 @@ This document is for the **backend agent** and describes API/schema/data changes
 - **Participation % convention:** `ParticipationPercent` is stored as NVARCHAR (e.g. `"32.0%"`, `"50%"`). The API also returns `CalculatedParticipationPercent` (and overwrites `ParticipationPercent` in list responses) as **0–100 with "%" suffix**, derived from `(ActiveExposure / totalActiveExposure) * 100` where ActiveExposure = `ExposureAmount` when not PaidOff, else 0. So display is 0–100; source of truth for calculation is `ExposureAmount` and the sum of active participations per loan/project.
 - **Total Bank Exposure (no double count):** Bank exposure is **only** the sum of that bank’s participation `ExposureAmount` (active = not PaidOff). The API does **not** add loan amount and participation amount together; total exposure for a bank = sum of its participation amounts across deals. No backend change was required; frontend uses participation amounts only.
 - **Participation vs loan amount:** Optional endpoint `GET /loans/:id/participation-summary` returns `{ loanId, loanAmount, participationTotal, participationActiveTotal, mismatch }` so the dashboard can show a server-side mismatch flag if desired.
+- **§10 Current balance:** Schema `add_loan_current_balance.sql` adds `CurrentBalance` to `banking.Loan`. GET/POST/PUT loans expose it.
+- **§11 POST loans:** createLoan uses `OUTPUT INSERTED.LoanId` then fetches the full row; 201 response includes the created loan in `data`.
+- **§12 IsLead:** Schema `add_participation_islead.sql` adds `IsLead` to `banking.Participation`. PUT participations accepts `IsLead` as boolean or `"true"`/`"false"` string.
+- **§13 Delete loan:** DELETE /api/banking/loans/:id blocks only when the loan has covenants or personal guarantees; otherwise deletes participations for that loan then the loan. Returns 409 with `LOAN_HAS_ASSOCIATIONS` and `associations` when blocked. (Equity commitments table has no `LoanId` in current schema.)
+- **§14 Covenant reminder:** ReminderDaysBefore/ReminderEmails removed from covenant INSERT/UPDATE so API works without those columns; GET still returns empty arrays when columns are absent.
 
 ---
 
@@ -170,28 +175,31 @@ This document is for the **backend agent** and describes API/schema/data changes
 
 ---
 
-## 13. Delete loan: "Cannot delete loan with associated records"
+## 13. Delete loan: only block when covenants, personal guarantees, or equity commitments exist
 
-**Issue:** When the user clicks **Delete** on a loan in the Loans tab, the API returns: *"Cannot delete loan with associated records"*. The delete is blocked because the loan has related data (e.g. participations, covenants, guarantees, DSCR tests, etc.) that reference the loan’s `LoanId`.
+**Issue:** When the user clicks **Delete** on a loan, the API returns *"Cannot delete loan with associated records"* and blocks the delete. The intent is to **only** block when the loan has **loan-specific** detail records that would be orphaned or ambiguous if the loan were removed.
 
-**Backend options (choose one or combine):**
+**Business rule:**
 
-1. **Cascade delete (recommended for UX)**  
-   When `DELETE /api/banking/loans/:id` is called, delete (or null out) all records that reference this loan before deleting the loan, e.g.:
-   - Participations for this `LoanId`
-   - Covenants tied to this `LoanId` (or set `LoanId` to null if they become project-level)
-   - Any other banking entities that have a required `LoanId` FK  
-   Then delete the loan. Return 200 with a success payload. Document in the API that delete is cascade (or list what is removed).
+- **Do block** delete only when the loan has any of:
+  - **Covenants** tied to this `LoanId`
+  - **Personal guarantees** tied to this `LoanId`
+  - **Equity commitments** tied to this `LoanId`
+- **Do not block** delete because of **participations**. When deleting a loan, **cascade-delete** (or remove) all participations for that `LoanId`, then delete the loan. A loan that has only participations and no covenants, personal guarantees, or equity commitments **must** be deletable.
 
-2. **Optional query parameter**  
-   Support e.g. `DELETE /api/banking/loans/:id?cascade=true`. If `cascade=true`, perform cascade delete as above. If omitted or `false`, keep current behavior (reject when associations exist) and return a structured error (see below).
+So: if a loan has no covenants, no personal guarantees, and no equity commitments for that `LoanId`, the backend should allow delete and remove any participations for that loan as part of the operation.
 
-3. **Clearer error when delete is blocked**  
-   If you do not cascade, return a **structured error** so the frontend can show a helpful message, e.g.:
-   - `{ "success": false, "error": { "message": "Cannot delete loan with associated records", "code": "LOAN_HAS_ASSOCIATIONS", "associations": ["Participations", "Covenants"] } }`  
-   so the UI can say something like: "This loan has Participations and Covenants. Remove them first (or use cascade delete if supported)."
+**Implementation:**
 
-**Frontend:** The dashboard shows a user-friendly message when this error occurs and suggests removing associated records first or contacting support. If the backend adds cascade delete (or a `cascade=true` option), the frontend can call the same delete endpoint; no change required unless a new parameter or endpoint is introduced.
+1. On `DELETE /api/banking/loans/:id`:
+   - If the loan has one or more **covenants** with `LoanId` = this loan → return 400 with a clear error (e.g. "Cannot delete loan: it has covenants. Remove or reassign them first.").
+   - If the loan has one or more **personal guarantees** for this loan → return 400 (same idea).
+   - If the loan has one or more **equity commitments** for this loan → return 400 (same idea).
+   - Otherwise: delete (cascade) all **participations** for this `LoanId`, then delete the loan. Return 200.
+
+2. **Defaulting covenants / guarantees / equity to “first active loan”:** For each property, when creating or displaying covenants, personal guarantees, or equity commitments, the app may treat “no loan selected” as the first active loan for that property. Backend does not need to change for that; frontend can default `LoanId` to the first active loan when saving if needed.
+
+**Frontend:** The dashboard shows a user-friendly message when delete is blocked, mentioning covenants, personal guarantees, and equity commitments (not participations). No frontend change needed once the backend only blocks on those three.
 
 ---
 
