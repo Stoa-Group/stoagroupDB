@@ -629,13 +629,13 @@ export const deleteLoan = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // Block only when loan has covenants, guarantees, or equity commitments; cascade participations.
+    // Block when loan has personal guarantees or any manual covenants. Auto-created key-date covenants are deleted with the loan; manual ones (DSCR, Occupancy, etc.) block delete.
     const check = await pool.request()
       .input('loanId', sql.Int, loanId)
       .query(`
         SELECT 
-          (SELECT COUNT(*) FROM banking.Covenant WHERE LoanId = @loanId) AS CovenantCount,
           (SELECT COUNT(*) FROM banking.Guarantee WHERE LoanId = @loanId) AS GuaranteeCount,
+          (SELECT COUNT(*) FROM banking.Covenant WHERE LoanId = @loanId AND CovenantType NOT IN (N'I/O Maturity', N'Loan Maturity', N'Permanent Loan Maturity', N'Mini-Perm Maturity', N'Perm Phase Maturity')) AS ManualCovenantCount,
           (SELECT COUNT(*) FROM banking.Loan WHERE LoanId = @loanId) AS LoanExists
       `);
     const row = check.recordset?.[0];
@@ -643,16 +643,16 @@ export const deleteLoan = async (req: Request, res: Response, next: NextFunction
       res.status(404).json({ success: false, error: { message: 'Loan not found' } });
       return;
     }
-    const covenantCount = row.CovenantCount ?? 0;
     const guaranteeCount = row.GuaranteeCount ?? 0;
+    const manualCovenantCount = row.ManualCovenantCount ?? 0;
     const associations: string[] = [];
-    if (covenantCount > 0) associations.push('covenants');
     if (guaranteeCount > 0) associations.push('personal guarantees');
+    if (manualCovenantCount > 0) associations.push('covenants (remove or reassign manual covenants first)');
     if (associations.length > 0) {
       res.status(409).json({
         success: false,
         error: {
-          message: `Cannot delete loan: it has ${associations.join(' and ')}. Remove or reassign them first.`,
+          message: `Cannot delete loan: it has ${associations.join(' and ')}.`,
           code: 'LOAN_HAS_ASSOCIATIONS',
           associations
         }
@@ -660,7 +660,13 @@ export const deleteLoan = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // Delete participations for this loan, then the loan
+    // Delete only auto-created key-date covenants, then participations, then the loan
+    await pool.request()
+      .input('loanId', sql.Int, loanId)
+      .query(`
+        DELETE FROM banking.Covenant
+        WHERE LoanId = @loanId AND CovenantType IN (N'I/O Maturity', N'Loan Maturity', N'Permanent Loan Maturity', N'Mini-Perm Maturity', N'Perm Phase Maturity')
+      `);
     await pool.request().input('loanId', sql.Int, loanId).query('DELETE FROM banking.Participation WHERE LoanId = @loanId');
     const result = await pool.request().input('loanId', sql.Int, loanId).query('DELETE FROM banking.Loan WHERE LoanId = @loanId');
 

@@ -79,9 +79,22 @@ Recommended flow:
 
 1. **Load** reminder settings (recipients + `daysBefore`) from your storage (or from the new settings API).
 2. **Build** the list of upcoming covenant dates (only for existing loans / project-level), e.g. from your covenants and loans tables, with at least: covenant id, project/deal name, date, type, and any fields needed for the email body.
-3. **For each** (date, daysBefore) pair:
-   - If “today” is exactly `daysBefore` days before that date, send one reminder email to the combined recipient list (recipientEmails + parsed additionalEmails).
+3. **For each** (covenant, date, daysBefore) pair:
+   - If “today” is exactly `daysBefore` days before that covenant date, send **one** reminder email to the combined recipient list (recipientEmails + parsed additionalEmails).
 4. Use a single **email template** for “upcoming covenant date reminder” (property name, date, type, days until, etc.). The existing covenant reminder email template (if any) can be adapted or reused for this.
+
+### 5.1 Once per milestone (no duplicates)
+
+**Rule:** Each reminder must be sent **at most once per milestone**. A “milestone” is one (CovenantId, covenant date, daysBefore) — e.g. “Covenant #42, date 2026-03-15, 7 days before.”
+
+- If the job runs **once per day**, the logic “send only when today = date − daysBefore” already yields one send per milestone (each milestone falls on one calendar day).
+- To be safe if the job runs **multiple times per day** (e.g. cron every hour) or is **retried**, the backend should **record** when a reminder was sent and **skip** that milestone on later runs.
+
+**Recommended:** Persist “sent” reminders in a table, e.g.:
+
+- **Table:** `banking.CovenantReminderSent` (or equivalent) with at least: `CovenantId`, `CovenantDate` (the covenant’s date), `DaysBefore` (e.g. 7, 14, 30), `SentAt` (when the email was sent).
+- **Before sending:** For each (CovenantId, covenant date, daysBefore) where today = date − daysBefore, check if a row already exists. If it does, **skip** (already sent for this milestone). If not, send the email and **insert** a row.
+- **Result:** Exactly one email per (CovenantId, covenant date, daysBefore), even with multiple job runs or retries.
 
 No change is required to the **per-row “Send reminder”** button in the Upcoming Dates table: that can remain an ad-hoc “send now” action (current behavior). The **scheduled** reminders are entirely driven by the global reminder settings and the job above.
 
@@ -96,6 +109,7 @@ No change is required to the **per-row “Send reminder”** button in the Upcom
 | **Save settings** | `PUT /api/banking/settings/upcoming-dates-reminders` (or equivalent); frontend calls `window.API.saveUpcomingDatesReminderSettings(settings)` when available |
 | **Who receives** | Merged list from `recipientEmails` and parsed `additionalEmails` |
 | **When** | For each covenant date, send on the days that are exactly `daysBefore` days before that date (e.g. 7, 14, 30, 60, 90) |
+| **Once per milestone** | At most one email per (CovenantId, covenant date, daysBefore). Use a sent-tracking table (e.g. `CovenantReminderSent`) so re-runs or retries never duplicate. |
 | **Which dates** | Only covenant dates for covenants whose loan still exists (or project-level); exclude covenants whose loan has been deleted |
 
 If the backend implements the above, the frontend’s Reminder settings modal and existing save/load logic will work with it with minimal or no further frontend changes.

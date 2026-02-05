@@ -118,7 +118,7 @@ This document is for the **backend agent** and describes API/schema/data changes
 - **§11 POST loans:** createLoan uses `OUTPUT INSERTED.LoanId` then fetches the full row; 201 response includes the created loan in `data`.
 - **§12 IsLead:** Schema `add_participation_islead.sql` adds `IsLead` to `banking.Participation`. PUT participations accepts `IsLead` as boolean or `"true"`/`"false"` string.
 - **§13 Delete loan:** DELETE /api/banking/loans/:id blocks when the loan has personal guarantees or any **manual** covenants (DSCR, Occupancy, Liquidity Requirement, Other). **Auto-created** key-date covenants (I/O Maturity, Loan Maturity, Permanent Loan Maturity, Mini-Perm Maturity, Perm Phase Maturity) are deleted with the loan; participations are always cascade-deleted. Returns 409 with `LOAN_HAS_ASSOCIATIONS` when blocked.
-- **§14 Covenant reminder:** ReminderDaysBefore/ReminderEmails removed from covenant INSERT/UPDATE so API works without those columns; GET still returns empty arrays when columns are absent.
+- **§14 Covenant reminder:** ReminderDaysBefore/ReminderEmails removed from covenant INSERT/UPDATE so API works without those columns; GET still returns empty arrays when columns are absent. **Covenant FinancingType:** If missing in DB, run `schema/add_covenant_financing_type.sql` (fixes "Invalid column name 'FinancingType'" on Add Covenant).
 
 ---
 
