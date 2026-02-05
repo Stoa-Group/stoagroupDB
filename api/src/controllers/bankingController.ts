@@ -29,7 +29,8 @@ export const getAllLoans = async (req: Request, res: Response, next: NextFunctio
     const result = await pool.request().query(`
       SELECT 
         l.*, 
-        p.ProjectName, 
+        p.ProjectName,
+        p.Stage AS ProjectStage,
         b.BankName AS LenderName,
         COALESCE(b.HQState, b.State) AS LenderState,
         CASE 
@@ -38,7 +39,8 @@ export const getAllLoans = async (req: Request, res: Response, next: NextFunctio
           WHEN l.MaturityDate IS NOT NULL AND l.LoanClosingDate IS NOT NULL 
           THEN DATEDIFF(MONTH, l.LoanClosingDate, l.MaturityDate)
           ELSE NULL
-        END AS ConstructionIOTermMonths
+        END AS ConstructionIOTermMonths,
+        CASE WHEN LTRIM(RTRIM(ISNULL(p.Stage, N''))) = N'Liquidated' THEN 0 ELSE l.LoanAmount END AS ExposureDisplay
       FROM banking.Loan l
       LEFT JOIN core.Project p ON l.ProjectId = p.ProjectId
       LEFT JOIN core.Bank b ON l.LenderId = b.BankId
@@ -59,6 +61,8 @@ export const getLoanById = async (req: Request, res: Response, next: NextFunctio
       .query(`
         SELECT 
           l.*,
+          p.ProjectName,
+          p.Stage AS ProjectStage,
           b.BankName AS LenderName,
           COALESCE(b.HQState, b.State) AS LenderState,
           CASE 
@@ -67,8 +71,10 @@ export const getLoanById = async (req: Request, res: Response, next: NextFunctio
             WHEN l.MaturityDate IS NOT NULL AND l.LoanClosingDate IS NOT NULL 
             THEN DATEDIFF(MONTH, l.LoanClosingDate, l.MaturityDate)
             ELSE NULL
-          END AS ConstructionIOTermMonths
+          END AS ConstructionIOTermMonths,
+          CASE WHEN LTRIM(RTRIM(ISNULL(p.Stage, N''))) = N'Liquidated' THEN 0 ELSE l.LoanAmount END AS ExposureDisplay
         FROM banking.Loan l
+        LEFT JOIN core.Project p ON l.ProjectId = p.ProjectId
         LEFT JOIN core.Bank b ON l.LenderId = b.BankId
         WHERE l.LoanId = @id
       `);
@@ -93,6 +99,8 @@ export const getLoansByProject = async (req: Request, res: Response, next: NextF
       .query(`
         SELECT 
           l.*,
+          p.ProjectName,
+          p.Stage AS ProjectStage,
           b.BankName AS LenderName,
           COALESCE(b.HQState, b.State) AS LenderState,
           CASE 
@@ -101,8 +109,10 @@ export const getLoansByProject = async (req: Request, res: Response, next: NextF
             WHEN l.MaturityDate IS NOT NULL AND l.LoanClosingDate IS NOT NULL 
             THEN DATEDIFF(MONTH, l.LoanClosingDate, l.MaturityDate)
             ELSE NULL
-          END AS ConstructionIOTermMonths
+          END AS ConstructionIOTermMonths,
+          CASE WHEN LTRIM(RTRIM(ISNULL(p.Stage, N''))) = N'Liquidated' THEN 0 ELSE l.LoanAmount END AS ExposureDisplay
         FROM banking.Loan l
+        LEFT JOIN core.Project p ON l.ProjectId = p.ProjectId
         LEFT JOIN core.Bank b ON l.LenderId = b.BankId
         WHERE l.ProjectId = @projectId 
         ORDER BY l.IsActive DESC, COALESCE(l.BirthOrder, 999), l.LoanId

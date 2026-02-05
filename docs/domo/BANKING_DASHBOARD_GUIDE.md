@@ -500,13 +500,15 @@ async function updateTobyGuarantee(projectId, percent, amount) {
 |--------------|---------------|-------|--------------|------|
 | Deal Names | `ProjectName` | `core.Project` (via loans/participations) | `/api/core/projects/:id` | ✅ Full |
 | Number of deals | COUNT(DISTINCT ProjectId) | `banking.Loan` or `banking.Participation` | Calculated | ❌ Calculated |
-| Exposure | `ExposureAmount` (sum) | `banking.Participation` | `/api/banking/participations/:id` | ✅ Full |
+| Exposure | `ExposureAmount` (sum) or `ExposureDisplay` (loans) | `banking.Participation` / `banking.Loan` | `/api/banking/participations`, `/api/banking/loans` | ✅ Full |
 | Positioning (lead? Participant?) | **CALCULATED** | See logic below | N/A | ❌ Calculated |
 | Estimated Hold Limit | `HoldLimit` | `core.Bank` | `/api/core/banks/:id` | ✅ Full |
 | Estimated Capacity | **CALCULATED** | `HoldLimit - CurrentExposure` | N/A | ❌ Calculated |
 | Debt Yield | **NOT IN DB** | Use external source | N/A | ❌ External |
 | Last Dollar | **CALCULATED** | See calculation below | N/A | ❌ Calculated |
 | LTC | **CALCULATED** | See calculation below | N/A | ❌ Calculated |
+
+**Liquidated deals (lead-only):** Deals like The Heights, Dawson Park, Silver Oaks have no participation rows (lead bank only). `GET /api/banking/loans` returns `ProjectStage` and `ExposureDisplay` per loan. When `ProjectStage === 'Liquidated'`, `ExposureDisplay` is 0; otherwise it equals `LoanAmount`. Use `ExposureDisplay` for the deal’s exposure so Liquidated lead-only deals show $0.
 
 #### API Query for Search By Bank:
 
