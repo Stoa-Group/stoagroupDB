@@ -363,7 +363,10 @@ export const createLoan = async (req: Request, res: Response, next: NextFunction
       );
       SELECT CAST(SCOPE_IDENTITY() AS INT) AS LoanId;
     `);
-    const newLoanId = insertResult.recordset?.[0]?.LoanId;
+    // Batch returns two recordsets: INSERT (empty), then SELECT SCOPE_IDENTITY(); take the last.
+    const recordsets = insertResult.recordsets;
+    const idRow = Array.isArray(recordsets) && recordsets.length > 0 ? recordsets[recordsets.length - 1]?.[0] : insertResult.recordset?.[0];
+    const newLoanId = idRow?.LoanId;
     if (newLoanId == null) {
       res.status(500).json({ success: false, error: { message: 'Failed to retrieve created loan' } });
       return;
