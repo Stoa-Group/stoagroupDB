@@ -5,6 +5,9 @@ import { bankingFileUpload } from '../middleware/uploadMiddleware';
 
 const router = Router();
 
+// Entities (Option B: list entity-projects; entity loans via GET /loans/project/:projectId)
+router.get('/entities', bankingController.getBankingEntities);
+
 // Loan routes
 router.get('/loans', bankingController.getAllLoans);
 router.get('/loans/project/:projectId', bankingController.getLoansByProject);

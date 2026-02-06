@@ -78,6 +78,29 @@ export const getPresence = async (req: Request, res: Response, next: NextFunctio
 };
 
 // ============================================================
+// ENTITIES (Option B: entity-projects – BACKEND-GUIDE-DEALS-LTC-MISC-LOANS §4)
+// List projects where ProductType = 'Entity'. Entity loans: use GET /loans/project/:projectId.
+// ============================================================
+
+export const getBankingEntities = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request().query(`
+      SELECT 
+        ProjectId, ProjectName, City, State, Region, Address, Units,
+        ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal,
+        CreatedAt, UpdatedAt
+      FROM core.Project
+      WHERE LTRIM(RTRIM(ISNULL(ProductType, N''))) = N'Entity'
+      ORDER BY ProjectName
+    `);
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================================
 // LOAN CONTROLLER
 // ============================================================
 
@@ -1537,9 +1560,13 @@ export const getParticipationsByProject = async (req: Request, res: Response, ne
   }
 };
 
+function toIsLeadBit(val: unknown): boolean {
+  return val === true || val === 1 || (typeof val === 'string' && val.toLowerCase() === 'true');
+}
+
 export const createParticipation = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { ProjectId, LoanId, BankId, FinancingType, ParticipationPercent, ExposureAmount, PaidOff, Notes } = req.body;
+    const { ProjectId, LoanId, BankId, FinancingType, ParticipationPercent, ExposureAmount, PaidOff, IsLead, Notes } = req.body;
 
     if (!ProjectId || !BankId) {
       res.status(400).json({ success: false, error: { message: 'ProjectId and BankId are required' } });
@@ -1556,7 +1583,15 @@ export const createParticipation = async (req: Request, res: Response, next: Nex
       return;
     }
 
+    const isLead = toIsLeadBit(IsLead);
     const pool = await getConnection();
+
+    if (isLead) {
+      await pool.request()
+        .input('ProjectId', sql.Int, ProjectId)
+        .query(`UPDATE banking.Participation SET IsLead = 0 WHERE ProjectId = @ProjectId`);
+    }
+
     const result = await pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('LoanId', sql.Int, LoanId)
@@ -1565,11 +1600,12 @@ export const createParticipation = async (req: Request, res: Response, next: Nex
       .input('ParticipationPercent', sql.NVarChar, ParticipationPercent)
       .input('ExposureAmount', sql.Decimal(18, 2), ExposureAmount)
       .input('PaidOff', sql.Bit, PaidOff)
+      .input('IsLead', sql.Bit, isLead)
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .query(`
-        INSERT INTO banking.Participation (ProjectId, LoanId, BankId, FinancingType, ParticipationPercent, ExposureAmount, PaidOff, Notes)
+        INSERT INTO banking.Participation (ProjectId, LoanId, BankId, FinancingType, ParticipationPercent, ExposureAmount, PaidOff, IsLead, Notes)
         OUTPUT INSERTED.*
-        VALUES (@ProjectId, @LoanId, @BankId, @FinancingType, @ParticipationPercent, @ExposureAmount, @PaidOff, @Notes)
+        VALUES (@ProjectId, @LoanId, @BankId, @FinancingType, @ParticipationPercent, @ExposureAmount, @PaidOff, @IsLead, @Notes)
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -1596,7 +1632,7 @@ export const createParticipation = async (req: Request, res: Response, next: Nex
 export const createParticipationByProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { projectId } = req.params;
-    const { BankId, FinancingType, ParticipationPercent, ExposureAmount, PaidOff, Notes } = req.body;
+    const { BankId, FinancingType, ParticipationPercent, ExposureAmount, PaidOff, IsLead, Notes } = req.body;
 
     if (!BankId) {
       res.status(400).json({ success: false, error: { message: 'BankId is required' } });
@@ -1614,8 +1650,14 @@ export const createParticipationByProject = async (req: Request, res: Response, 
 
     // Default to 'Construction' if not provided
     const finalFinancingType = FinancingType || 'Construction';
-
+    const isLead = toIsLeadBit(IsLead);
     const pool = await getConnection();
+
+    if (isLead) {
+      await pool.request()
+        .input('ProjectId', sql.Int, projectId)
+        .query(`UPDATE banking.Participation SET IsLead = 0 WHERE ProjectId = @ProjectId`);
+    }
     
     // Find the loan for this project (prefer Construction, but allow Permanent)
     const findLoan = await pool.request()
@@ -1649,11 +1691,12 @@ export const createParticipationByProject = async (req: Request, res: Response, 
       .input('ParticipationPercent', sql.NVarChar, ParticipationPercent)
       .input('ExposureAmount', sql.Decimal(18, 2), ExposureAmount)
       .input('PaidOff', sql.Bit, PaidOff || false)
+      .input('IsLead', sql.Bit, isLead)
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .query(`
-        INSERT INTO banking.Participation (ProjectId, LoanId, BankId, FinancingType, ParticipationPercent, ExposureAmount, PaidOff, Notes)
+        INSERT INTO banking.Participation (ProjectId, LoanId, BankId, FinancingType, ParticipationPercent, ExposureAmount, PaidOff, IsLead, Notes)
         OUTPUT INSERTED.*
-        VALUES (@ProjectId, @LoanId, @BankId, @FinancingType, @ParticipationPercent, @ExposureAmount, @PaidOff, @Notes)
+        VALUES (@ProjectId, @LoanId, @BankId, @FinancingType, @ParticipationPercent, @ExposureAmount, @PaidOff, @IsLead, @Notes)
       `);
 
     res.status(201).json({ success: true, data: result.recordset[0] });
@@ -1717,6 +1760,19 @@ export const updateParticipation = async (req: Request, res: Response, next: Nex
     if (fields.length === 0) {
       res.status(400).json({ success: false, error: { message: 'No fields to update' } });
       return;
+    }
+
+    // When setting IsLead = true, clear other participations' IsLead for the same project (one lead per deal)
+    if (participationData.IsLead !== undefined && toIsLeadBit(participationData.IsLead)) {
+      const current = await pool.request().input('id', sql.Int, id).query(`
+        SELECT ProjectId FROM banking.Participation WHERE ParticipationId = @id
+      `);
+      if (current.recordset.length > 0) {
+        await pool.request()
+          .input('ProjectId', sql.Int, current.recordset[0].ProjectId)
+          .input('id', sql.Int, id)
+          .query(`UPDATE banking.Participation SET IsLead = 0 WHERE ProjectId = @ProjectId AND ParticipationId <> @id`);
+      }
     }
 
     const result = await request.query(`

@@ -14,7 +14,7 @@ export const getAllProjects = async (req: Request, res: Response, next: NextFunc
     const result = await pool.request().query(`
       SELECT 
         ProjectId, ProjectName, City, State, Region, Address, Units,
-        ProductType, Stage, EstimatedConstructionStartDate,
+        ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal,
         CreatedAt, UpdatedAt
       FROM core.Project 
       ORDER BY ProjectName
@@ -34,7 +34,7 @@ export const getProjectById = async (req: Request, res: Response, next: NextFunc
       .query(`
         SELECT 
           ProjectId, ProjectName, City, State, Region, Address, Units,
-          ProductType, Stage, EstimatedConstructionStartDate,
+          ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal,
           CreatedAt, UpdatedAt
         FROM core.Project 
         WHERE ProjectId = @id
@@ -55,7 +55,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
   try {
     const {
       ProjectName, City, State, Region, Address, Units,
-      ProductType, Stage, EstimatedConstructionStartDate
+      ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal
     } = req.body;
 
     if (!ProjectName) {
@@ -74,9 +74,10 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
       .input('ProductType', sql.NVarChar, ProductType)
       .input('Stage', sql.NVarChar, Stage)
       .input('EstimatedConstructionStartDate', sql.Date, EstimatedConstructionStartDate)
+      .input('LTCOriginal', sql.Decimal(10, 4), LTCOriginal != null ? Number(LTCOriginal) : null)
       .query(`
-        INSERT INTO core.Project (ProjectName, City, State, Region, Address, Units, ProductType, Stage, EstimatedConstructionStartDate)
-        VALUES (@ProjectName, @City, @State, @Region, @Address, @Units, @ProductType, @Stage, @EstimatedConstructionStartDate);
+        INSERT INTO core.Project (ProjectName, City, State, Region, Address, Units, ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal)
+        VALUES (@ProjectName, @City, @State, @Region, @Address, @Units, @ProductType, @Stage, @EstimatedConstructionStartDate, @LTCOriginal);
         SELECT SCOPE_IDENTITY() AS ProjectId;
       `);
 
@@ -87,7 +88,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
       .query(`
         SELECT 
           ProjectId, ProjectName, City, State, Region, Address, Units,
-          ProductType, Stage, EstimatedConstructionStartDate,
+          ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal,
           CreatedAt, UpdatedAt
         FROM core.Project 
         WHERE ProjectId = @id
@@ -121,6 +122,8 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
           request.input(key, sql.Int, projectData[key]);
         } else if (key === 'EstimatedConstructionStartDate') {
           request.input(key, sql.Date, projectData[key]);
+        } else if (key === 'LTCOriginal') {
+          request.input(key, sql.Decimal(10, 4), projectData[key] != null ? Number(projectData[key]) : null);
         } else if (key === 'State') {
           request.input(key, sql.NVarChar, normalizeState(projectData[key]));
         } else {
@@ -160,7 +163,7 @@ export const updateProject = async (req: Request, res: Response, next: NextFunct
       .query(`
         SELECT 
           ProjectId, ProjectName, City, State, Region, Address, Units,
-          ProductType, Stage, EstimatedConstructionStartDate,
+          ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal,
           CreatedAt, UpdatedAt
         FROM core.Project 
         WHERE ProjectId = @id
