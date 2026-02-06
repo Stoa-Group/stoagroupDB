@@ -2091,6 +2091,12 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
   }
 };
 
+/**
+ * PUT /api/pipeline/deal-pipeline/:id
+ * Persists all provided body fields to the database: core.Project (if core fields provided) and pipeline.DealPipeline.
+ * StartDate is written to pipeline.DealPipeline.StartDate. For the updated date to appear after refresh,
+ * the app must load deal pipeline data from this API (e.g. getDealPipelineById, getAllDealPipelines), not only from Domo.
+ */
 export const updateDealPipeline = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
@@ -2223,7 +2229,12 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
     }
     if (StartDate !== undefined) {
       fields.push('StartDate = @StartDate');
-      request.input('StartDate', sql.Date, StartDate);
+      const startDateVal = StartDate == null || StartDate === '' ? null : new Date(StartDate);
+      if (startDateVal instanceof Date && isNaN(startDateVal.getTime())) {
+        res.status(400).json({ success: false, error: { message: 'StartDate must be a valid date (e.g. YYYY-MM-DD)' } });
+        return;
+      }
+      request.input('StartDate', sql.Date, startDateVal);
     }
     if (UnitCount !== undefined) {
       fields.push('UnitCount = @UnitCount');

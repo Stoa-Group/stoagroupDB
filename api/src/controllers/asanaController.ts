@@ -322,12 +322,15 @@ export async function updateTaskDueOn(req: Request, res: Response): Promise<void
       return;
     }
 
-    const startDateFieldGid = process.env.ASANA_START_DATE_CUSTOM_FIELD_GID?.replace(/['"]/g, '').trim();
+    const startDateFieldGid = (
+      process.env.ASANA_START_DATE_CUSTOM_FIELD_GID ||
+      process.env.ASANA_CUSTOM_FIELD_GID_START_DATE
+    )?.replace(/['"]/g, '').trim();
     if (!startDateFieldGid) {
       res.status(503).json({
         success: false,
         error: {
-          message: 'Start Date custom field not configured. Set ASANA_START_DATE_CUSTOM_FIELD_GID so the remedy updates Start Date only (not Due Date).',
+          message: 'Start Date custom field not configured. Set ASANA_START_DATE_CUSTOM_FIELD_GID or ASANA_CUSTOM_FIELD_GID_START_DATE so the remedy updates Start Date only (not Due Date).',
         },
       });
       return;

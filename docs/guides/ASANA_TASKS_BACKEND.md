@@ -91,7 +91,7 @@ The frontend will then show only deal-based upcoming dates and will not break.
 
 - **ASANA_ACCESS_TOKEN** or **ASANA_PAT:** Required for Asana API calls (or OAuth: CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN).
 - **ASANA_WORKSPACE_GID** (optional): Default workspace when the client does not send `workspace`.
-- **ASANA_START_DATE_CUSTOM_FIELD_GID** (required for remedy): The GID of the Asana custom field "Start Date". The remedy endpoint **only** updates this custom field; it **never** updates the task’s Due Date (`due_on`). If this env var is not set, the remedy returns 503 with instructions to set it.
+- **ASANA_START_DATE_CUSTOM_FIELD_GID** or **ASANA_CUSTOM_FIELD_GID_START_DATE** (required for remedy): The GID of the Asana custom field "Start Date". The remedy endpoint **only** updates this custom field; it **never** updates the task’s Due Date (`due_on`). If neither env var is set, the remedy returns 503 with instructions to set one.
 
 ---
 
