@@ -60,14 +60,26 @@ The import script looks for these variables (in order):
 - `CLIENT_SECRET` - OAuth Client Secret
 - `REFRESH_TOKEN` or `ASANA_REFRESH_TOKEN` - OAuth refresh token (required for server-side OAuth; obtain once via authorization flow, then set in env)
 
+## Getting an OAuth refresh token (optional)
+
+If you want to use OAuth instead of a PAT (e.g. for the Upcoming Tasks API on Render):
+
+1. In [Asana My Apps](https://app.asana.com/0/my-apps), open your app → **OAuth** tab. Add this **Redirect URL** exactly: `http://localhost:3456/callback`. (If Asana only allows https, use a tunnel like [ngrok](https://ngrok.com) and add the https URL.)
+2. From the repo root or `api/` folder, run:
+   ```bash
+   cd api && node scripts/get-asana-refresh-token.js
+   ```
+3. Open the URL printed in the terminal in your browser. Log into Asana if needed and click **Allow**.
+4. The script will print `REFRESH_TOKEN=...`. Add **REFRESH_TOKEN** (or **ASANA_REFRESH_TOKEN**) to Render’s Environment and redeploy.
+
+Your `.env` (or Render) must have **CLIENT_ID** and **CLIENT_SECRET** set; the script reads them from the deal pipeline `.env` or repo root `.env`.
+
 ## Note on OAuth
 
 The `.env` file has `CLIENT_ID` and `CLIENT_SECRET` for OAuth, but:
-- **OAuth requires user authorization** (redirect flow)
-- **Personal Access Token (PAT) is simpler** for import scripts
-- The import script currently uses PAT authentication
-
-If you need OAuth support, you'll need to implement the authorization code flow separately.
+- **OAuth requires user authorization** (one-time flow above to get a refresh token)
+- **Personal Access Token (PAT) is simpler** for most use cases
+- The import scripts and Upcoming Tasks API accept either PAT or OAuth (PAT + refresh token)
 
 ## Troubleshooting
 

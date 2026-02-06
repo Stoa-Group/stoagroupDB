@@ -28,7 +28,7 @@ async function getAsanaToken(): Promise<string | null> {
   }
 
   try {
-    const tokenUrl = ASANA_API_BASE.replace(/\/api\/1\.0\/?$/, '') + '/api/1.0/oauth_token';
+    const tokenUrl = 'https://app.asana.com/-/oauth_token';
     const res = await fetch(tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -55,8 +55,9 @@ async function getAsanaToken(): Promise<string | null> {
       expiresAt: now + expiresIn * 1000,
     };
     return data.access_token;
-  } catch {
+  } catch (e) {
     oauthTokenCache = null;
+    console.error('[Asana] OAuth token refresh failed:', e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -195,7 +196,8 @@ export async function getUpcomingTasks(req: Request, res: Response): Promise<voi
     ];
 
     res.json({ success: true, data: result });
-  } catch {
+  } catch (e) {
+    console.error('[Asana] getUpcomingTasks failed:', e instanceof Error ? e.message : e);
     res.status(200).json({ success: false, error: { message: 'Asana unavailable' } });
   }
 }
