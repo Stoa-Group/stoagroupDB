@@ -118,6 +118,32 @@ async function asanaFetch(
   return res.json() as Promise<{ data?: unknown[]; next_page?: { offset?: string } }>;
 }
 
+/** PUT to Asana API (e.g. update task). */
+async function asanaPut(
+  token: string,
+  path: string,
+  body: Record<string, unknown>
+): Promise<{ data?: Record<string, unknown> }> {
+  const url = path.startsWith('http') ? path : ASANA_API_BASE + path;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ data: body }),
+  });
+
+  if (res.status === 429) throw new Error('Asana rate limit');
+  if (res.status === 401) oauthTokenCache = null;
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    const msg = (errBody as { errors?: Array<{ message?: string }> })?.errors?.[0]?.message || res.statusText;
+    throw new Error(msg || 'Asana request failed');
+  }
+  return res.json() as Promise<{ data?: Record<string, unknown> }>;
+}
+
 /** Fetch single project details (name) by GID. */
 async function fetchProject(token: string, projectGid: string): Promise<AsanaProject | null> {
   const path = `/projects/${projectGid}?${new URLSearchParams({ opt_fields: 'name,gid' })}`;
@@ -199,5 +225,44 @@ export async function getUpcomingTasks(req: Request, res: Response): Promise<voi
   } catch (e) {
     console.error('[Asana] getUpcomingTasks failed:', e instanceof Error ? e.message : e);
     res.status(200).json({ success: false, error: { message: 'Asana unavailable' } });
+  }
+}
+
+/** YYYY-MM-DD format. */
+const DUE_ON_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * PUT /api/asana/tasks/:taskGid/due-on
+ * Body: { due_on: "YYYY-MM-DD" }
+ * Updates the Asana task's due date (admin remedy: override Asana with database date).
+ */
+export async function updateTaskDueOn(req: Request, res: Response): Promise<void> {
+  try {
+    const taskGid = (req.params.taskGid || '').trim();
+    const dueOn = typeof req.body?.due_on === 'string' ? req.body.due_on.trim() : '';
+
+    if (!taskGid) {
+      res.status(400).json({ success: false, error: { message: 'taskGid required' } });
+      return;
+    }
+    if (!DUE_ON_REGEX.test(dueOn)) {
+      res.status(400).json({ success: false, error: { message: 'due_on must be YYYY-MM-DD' } });
+      return;
+    }
+
+    const token = await getAsanaToken();
+    if (!token) {
+      res.status(200).json({ success: false, error: { message: 'Asana unavailable' } });
+      return;
+    }
+
+    const json = await asanaPut(token, `/tasks/${taskGid}`, { due_on: dueOn });
+    res.json({ success: true, data: json.data || { gid: taskGid, due_on: dueOn } });
+  } catch (e) {
+    console.error('[Asana] updateTaskDueOn failed:', e instanceof Error ? e.message : e);
+    res.status(200).json({
+      success: false,
+      error: { message: e instanceof Error ? e.message : 'Asana unavailable' },
+    });
   }
 }

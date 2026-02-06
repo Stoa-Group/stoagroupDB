@@ -246,6 +246,7 @@ app.get('/api', (req: Request, res: Response) => {
       },
       asana: {
         upcomingTasks: 'GET /api/asana/upcoming-tasks (Deal Pipeline project; ?project, daysAhead)',
+        updateTaskDueOn: 'PUT /api/asana/tasks/:taskGid/due-on (body: { due_on: "YYYY-MM-DD" }; admin remedy)',
       },
     },
   });
