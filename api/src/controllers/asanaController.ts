@@ -352,3 +352,81 @@ export async function updateTaskDueOn(req: Request, res: Response): Promise<void
     });
   }
 }
+
+/** Map api-client field keys to env var names (ASANA_CUSTOM_FIELD_GID_*). */
+const CUSTOM_FIELD_KEY_TO_ENV: Record<string, string> = {
+  unit_count: 'ASANA_CUSTOM_FIELD_GID_UNIT_COUNT',
+  bank: 'ASANA_CUSTOM_FIELD_GID_BANK',
+  location: 'ASANA_CUSTOM_FIELD_GID_LOCATION',
+  priority: 'ASANA_CUSTOM_FIELD_GID_PRIORITY',
+  stage: 'ASANA_CUSTOM_FIELD_GID_PRIORITY', // often same as priority in Deal Pipeline
+  product_type: 'ASANA_CUSTOM_FIELD_GID_PRIORITY_2', // adjust if you have a dedicated env
+  precon_manager: 'ASANA_CUSTOM_FIELD_GID_STOA_EMPLOYEE', // adjust if different
+};
+
+/**
+ * PUT /api/asana/tasks/:taskGid/custom-field
+ * Body: { field: string, value: string | number }. Updates one Asana custom field by key (unit_count, bank, etc.).
+ */
+export async function updateTaskCustomField(req: Request, res: Response): Promise<void> {
+  try {
+    const taskGid = (req.params.taskGid || '').trim();
+    const fieldKey = typeof req.body?.field === 'string' ? req.body.field.trim().toLowerCase() : '';
+    let value = req.body?.value;
+
+    if (!taskGid) {
+      res.status(400).json({ success: false, error: { message: 'taskGid required' } });
+      return;
+    }
+    if (!fieldKey) {
+      res.status(400).json({ success: false, error: { message: 'field required (e.g. unit_count, bank, location)' } });
+      return;
+    }
+
+    const envKey = CUSTOM_FIELD_KEY_TO_ENV[fieldKey];
+    if (!envKey) {
+      res.status(400).json({
+        success: false,
+        error: { message: `Unsupported field "${fieldKey}". Supported: ${Object.keys(CUSTOM_FIELD_KEY_TO_ENV).join(', ')}` },
+      });
+      return;
+    }
+
+    const customFieldGid = process.env[envKey]?.replace(/['"]/g, '').trim();
+    if (!customFieldGid) {
+      res.status(503).json({
+        success: false,
+        error: { message: `Custom field "${fieldKey}" not configured. Set ${envKey} in environment.` },
+      });
+      return;
+    }
+
+    const token = await getAsanaToken();
+    if (!token) {
+      res.status(200).json({ success: false, error: { message: 'Asana unavailable' } });
+      return;
+    }
+
+    // Asana: text/number as primitive; date as { date: "YYYY-MM-DD" }; enum as option GID string
+    let asanaValue: string | number | { date: string };
+    if (value === null || value === undefined) {
+      asanaValue = '';
+    } else if (typeof value === 'number') {
+      asanaValue = value;
+    } else if (typeof value === 'string' && DATE_REGEX.test(value.trim())) {
+      asanaValue = { date: value.trim() };
+    } else {
+      asanaValue = String(value);
+    }
+
+    const body = { custom_fields: { [customFieldGid]: asanaValue } };
+    const json = await asanaPut(token, `/tasks/${taskGid}`, body);
+    res.json({ success: true, data: json.data || { gid: taskGid } });
+  } catch (e) {
+    console.error('[Asana] updateTaskCustomField failed:', e instanceof Error ? e.message : e);
+    res.status(200).json({
+      success: false,
+      error: { message: e instanceof Error ? e.message : 'Asana unavailable' },
+    });
+  }
+}

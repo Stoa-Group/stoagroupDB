@@ -246,7 +246,8 @@ app.get('/api', (req: Request, res: Response) => {
       },
       asana: {
         upcomingTasks: 'GET /api/asana/upcoming-tasks (?workspace, project, daysAhead; tasks include start_date from custom field)',
-        updateTaskDueOn: 'PUT /api/asana/tasks/:taskGid/due-on (body: { due_on: "YYYY-MM-DD" }; sets Start Date custom field when env set)',
+        updateTaskDueOn: 'PUT /api/asana/tasks/:taskGid/due-on (body: { due_on: "YYYY-MM-DD" }; sets Start Date custom field only)',
+        updateTaskCustomField: 'PUT /api/asana/tasks/:taskGid/custom-field (body: { field, value }; unit_count, bank, location, etc.)',
       },
     },
   });

@@ -1272,9 +1272,9 @@
 }
 
 /**
- * Update the Asana task's Start Date custom field only (admin remedy: override Asana with database date or fill when empty).
+ * Update the Asana task's Start Date custom field (admin remedy: override Asana with database date or fill when empty).
  * Backend updates only the "Start Date" custom field; Due Date (due_on) is never changed. Requires ASANA_START_DATE_CUSTOM_FIELD_GID (returns 503 if missing).
- * PUT /api/asana/tasks/:taskGid/due-on
+ * PUT /api/asana/tasks/:taskGid/due-on (backend interprets as "set Start Date" when configured).
  * @param {string} taskGid - Asana task GID
  * @param {string} dateStr - Date string YYYY-MM-DD (e.g. database start date)
  * @returns {Promise<object>} { success: true, data } or { success: false, error: { message } }
@@ -1288,6 +1288,18 @@
  */
   async function updateAsanaTaskDueDate(taskGid, dateStr) {
   return updateAsanaTaskStartDate(taskGid, dateStr);
+}
+
+/**
+ * Update an Asana task custom field (admin remedy: database → Asana). Backend maps field keys to env GIDs.
+ * PUT /api/asana/tasks/:taskGid/custom-field
+ * @param {string} taskGid - Asana task GID
+ * @param {string} fieldKey - One of: unit_count, bank, location, priority, stage, product_type, precon_manager
+ * @param {string|number} value - Value to set (string, number, or YYYY-MM-DD for date; enum fields use option GID)
+ * @returns {Promise<object>} { success: true, data } or { success: false, error: { message } }
+ */
+  async function updateAsanaTaskCustomField(taskGid, fieldKey, value) {
+  return apiRequest(`/api/asana/tasks/${encodeURIComponent(taskGid)}/custom-field`, 'PUT', { field: fieldKey, value: value == null ? '' : value });
 }
 
 // LIQUIDITY REQUIREMENTS
@@ -2714,6 +2726,7 @@
   API.getAsanaUpcomingTasks = getAsanaUpcomingTasks;
   API.updateAsanaTaskStartDate = updateAsanaTaskStartDate;
   API.updateAsanaTaskDueDate = updateAsanaTaskDueDate;
+  API.updateAsanaTaskCustomField = updateAsanaTaskCustomField;
   
   // Banking - Liquidity Requirements
   API.getAllLiquidityRequirements = getAllLiquidityRequirements;
