@@ -85,16 +85,30 @@ export const getPresence = async (req: Request, res: Response, next: NextFunctio
 export const getBankingEntities = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await getConnection();
-    const result = await pool.request().query(`
-      SELECT 
-        ProjectId, ProjectName, City, State, Region, Address, Units,
-        ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal,
-        CreatedAt, UpdatedAt
-      FROM core.Project
-      WHERE LTRIM(RTRIM(ISNULL(ProductType, N''))) = N'Entity'
-      ORDER BY ProjectName
-    `);
-    res.json({ success: true, data: result.recordset });
+    const [projectsResult, partnersResult] = await Promise.all([
+      pool.request().query(`
+        SELECT 
+          ProjectId, ProjectName, City, State, Region, Address, Units,
+          ProductType, Stage, EstimatedConstructionStartDate, LTCOriginal,
+          CreatedAt, UpdatedAt
+        FROM core.Project
+        WHERE LTRIM(RTRIM(ISNULL(ProductType, N''))) = N'Entity'
+        ORDER BY ProjectName
+      `),
+      pool.request().query(`
+        SELECT EquityPartnerId, PartnerName, PartnerType, InvestorRepId, Notes
+        FROM core.EquityPartner
+        WHERE LTRIM(RTRIM(ISNULL(PartnerType, N''))) = N'Entity'
+        ORDER BY PartnerName
+      `),
+    ]);
+    res.json({
+      success: true,
+      data: {
+        projects: projectsResult.recordset,
+        entities: partnersResult.recordset,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -776,13 +790,7 @@ export const deleteLoan = async (req: Request, res: Response, next: NextFunction
     await run('DELETE FROM banking.LiquidityRequirement WHERE LoanId = @loanId');
     await run('DELETE FROM banking.LoanModification WHERE LoanId = @loanId');
     await run('DELETE FROM banking.LoanProceeds WHERE LoanId = @loanId');
-    // EquityCommitment may have LoanId (optional column)
-    const hasLoanId = await pool.request().query(`
-      SELECT 1 AS HasCol FROM sys.columns WHERE object_id = OBJECT_ID('banking.EquityCommitment') AND name = 'LoanId'
-    `);
-    if (hasLoanId.recordset?.length) {
-      await run('DELETE FROM banking.EquityCommitment WHERE LoanId = @loanId');
-    }
+    // Equity commitments are deal-wide (§7); do not delete or touch them when deleting a loan.
     const result = await run('DELETE FROM banking.Loan WHERE LoanId = @loanId');
 
     if (result.rowsAffected[0] === 0) {
@@ -954,7 +962,7 @@ export const copyFromLoan = async (req: Request, res: Response, next: NextFuncti
     const body = req.body || {};
     const copyCovenants = toCopyFlag(body.copyCovenants);
     const copyGuarantees = toCopyFlag(body.copyGuarantees);
-    const copyEquityCommitments = toCopyFlag(body.copyEquityCommitments);
+    // §9: Equity commitments are deal-wide; copy-from only covenants and guarantees (ignore legacy copyEquityCommitments).
     const targetId = parseInt(targetLoanId, 10);
     const sourceId = parseInt(sourceLoanId, 10);
     if (isNaN(targetId) || isNaN(sourceId)) {
@@ -986,10 +994,9 @@ export const copyFromLoan = async (req: Request, res: Response, next: NextFuncti
       return;
     }
 
-    const summary: { copyCovenants: number; copyGuarantees: number; copyEquityCommitments: number } = {
+    const summary: { copyCovenants: number; copyGuarantees: number } = {
       copyCovenants: 0,
       copyGuarantees: 0,
-      copyEquityCommitments: 0,
     };
 
     if (copyCovenants) {
@@ -1027,23 +1034,6 @@ export const copyFromLoan = async (req: Request, res: Response, next: NextFuncti
           WHERE LoanId = @sourceId
         `);
       summary.copyGuarantees = guar.rowsAffected[0] ?? 0;
-    }
-
-    if (copyEquityCommitments) {
-      if (await pool.request().query(`
-        SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('banking.EquityCommitment') AND name = 'LoanId'
-      `).then(r => r.recordset.length > 0)) {
-        const eq = await pool.request()
-          .input('sourceId', sql.Int, sourceId)
-          .input('targetId', sql.Int, targetId)
-          .query(`
-            INSERT INTO banking.EquityCommitment (ProjectId, LoanId, EquityPartnerId, EquityType, LeadPrefGroup, FundingDate, Amount, InterestRate, AnnualMonthly, BackEndKicker, LastDollar, Notes)
-            SELECT ProjectId, @targetId, EquityPartnerId, EquityType, LeadPrefGroup, FundingDate, Amount, InterestRate, AnnualMonthly, BackEndKicker, LastDollar, Notes
-            FROM banking.EquityCommitment
-            WHERE LoanId = @sourceId
-          `);
-        summary.copyEquityCommitments = eq.rowsAffected[0] ?? 0;
-      }
     }
 
     res.json({ success: true, data: summary });
@@ -3236,7 +3226,7 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
     const {
       ProjectId, EquityPartnerId, EquityType, LeadPrefGroup,
       FundingDate, Amount, InterestRate, AnnualMonthly,
-      BackEndKicker, LastDollar, Notes, RelatedPartyIds
+      BackEndKicker, LastDollar, Notes, RelatedPartyIds, IsPaidOff
     } = req.body;
 
     if (!ProjectId) {
@@ -3292,17 +3282,18 @@ export const createEquityCommitment = async (req: Request, res: Response, next: 
         .input('BackEndKicker', sql.NVarChar, BackEndKicker)
         .input('LastDollar', sql.Bit, LastDollar)
         .input('Notes', sql.NVarChar(sql.MAX), Notes)
+        .input('IsPaidOff', sql.Bit, IsPaidOff === true || IsPaidOff === 1 || (typeof IsPaidOff === 'string' && IsPaidOff.toLowerCase() === 'true') ? 1 : 0)
         .query(`
           INSERT INTO banking.EquityCommitment (
             ProjectId, EquityPartnerId, EquityType, LeadPrefGroup,
             FundingDate, Amount, InterestRate, AnnualMonthly,
-            BackEndKicker, LastDollar, Notes
+            BackEndKicker, LastDollar, Notes, IsPaidOff
           )
           OUTPUT INSERTED.*
           VALUES (
             @ProjectId, @EquityPartnerId, @EquityType, @LeadPrefGroup,
             @FundingDate, @Amount, @InterestRate, @AnnualMonthly,
-            @BackEndKicker, @LastDollar, @Notes
+            @BackEndKicker, @LastDollar, @Notes, @IsPaidOff
           )
         `);
 
@@ -3384,7 +3375,7 @@ export const updateEquityCommitment = async (req: Request, res: Response, next: 
     const {
       ProjectId, EquityPartnerId, EquityType, LeadPrefGroup,
       FundingDate, Amount, InterestRate, AnnualMonthly,
-      BackEndKicker, LastDollar, Notes, RelatedPartyIds
+      BackEndKicker, LastDollar, Notes, RelatedPartyIds, IsPaidOff
     } = req.body;
 
     // Validate EquityType if provided
@@ -3481,6 +3472,10 @@ export const updateEquityCommitment = async (req: Request, res: Response, next: 
       if (Notes !== undefined) {
         updateFields.push('Notes = @Notes');
         request.input('Notes', sql.NVarChar(sql.MAX), Notes);
+      }
+      if (IsPaidOff !== undefined) {
+        updateFields.push('IsPaidOff = @IsPaidOff');
+        request.input('IsPaidOff', sql.Bit, IsPaidOff === true || IsPaidOff === 1 || (typeof IsPaidOff === 'string' && IsPaidOff.toLowerCase() === 'true') ? 1 : 0);
       }
 
       if (updateFields.length === 0) {
