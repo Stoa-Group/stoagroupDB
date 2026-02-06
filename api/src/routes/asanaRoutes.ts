@@ -5,6 +5,8 @@ const router = Router();
 
 /** Ping to verify Asana routes are deployed (e.g. GET /api/asana). */
 router.get('/', (_req, res) => res.json({ ok: true, message: 'Asana API' }));
+/** List project custom fields (GID, name, type) for env config. Query: project (optional). */
+router.get('/custom-fields', asanaController.getProjectCustomFields);
 router.get('/upcoming-tasks', asanaController.getUpcomingTasks);
 /** Admin remedy: set Asana task Start Date custom field only (body: { due_on: "YYYY-MM-DD" }). */
 router.put('/tasks/:taskGid/due-on', asanaController.updateTaskDueOn);

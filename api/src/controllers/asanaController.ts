@@ -353,6 +353,43 @@ export async function getUpcomingTasks(req: Request, res: Response): Promise<voi
   }
 }
 
+/**
+ * GET /api/asana/custom-fields
+ * Query: project (optional) — project GID. If omitted, uses ASANA_PROJECT_GID or default Deal Pipeline project.
+ * Returns all custom fields on the project with gid, name, type (and enum_options for enum/multi_enum) for use in env config.
+ */
+export async function getProjectCustomFields(req: Request, res: Response): Promise<void> {
+  try {
+    const token = await getAsanaToken();
+    if (!token) {
+      res.status(200).json({ success: false, error: { message: 'Asana unavailable' } });
+      return;
+    }
+    const projectGid = (req.query.project as string)?.trim() || getDealPipelineProjectGid();
+    const path = `/projects/${projectGid}/custom_field_settings?${new URLSearchParams({
+      opt_fields: 'custom_field.gid,custom_field.name,custom_field.type,custom_field.enum_options',
+      limit: '100',
+    })}`;
+    const json = await asanaFetch(token, path);
+    const settings = (json.data || []) as Array<{ custom_field?: { gid: string; name: string; type: string; enum_options?: Array<{ gid: string; name: string }> } }>;
+    const customFields = settings
+      .filter((s) => s.custom_field?.gid)
+      .map((s) => ({
+        gid: s.custom_field!.gid,
+        name: s.custom_field!.name || '',
+        type: s.custom_field!.type || 'text',
+        enum_options: s.custom_field!.enum_options?.map((o) => ({ gid: o.gid, name: o.name })) ?? undefined,
+      }));
+    res.json({ success: true, data: { projectGid, customFields } });
+  } catch (e) {
+    console.error('[Asana] getProjectCustomFields failed:', e instanceof Error ? e.message : e);
+    res.status(200).json({
+      success: false,
+      error: { message: e instanceof Error ? e.message : 'Asana unavailable' },
+    });
+  }
+}
+
 /** YYYY-MM-DD format. */
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
