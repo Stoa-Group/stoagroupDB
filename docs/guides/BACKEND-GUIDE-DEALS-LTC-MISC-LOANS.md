@@ -116,3 +116,19 @@ After implementation, the **api-client** (or API contract) should support:
 - **Entities:** Endpoint(s) to list entities and to list (and create/update) loans per entity, as in section 4.
 
 The frontend will **not** change the api-client; it will consume the above once the backend (and updated api-client) are provided.
+
+---
+
+## 8. Loan delete – allow when loan has equity commitments, covenants, guarantees
+
+**Requirement:** Loans should remain deletable even when they have related records (equity commitments, covenants, guarantees). Previously the API returned 409 when the loan had guarantees or manual covenants.
+
+**Implementation:** DELETE /api/banking/loans/:id now **cascades**: it deletes (in order) GuaranteeBurndown, Guarantee, Covenant, Participation, DSCRTest, LiquidityRequirement, LoanModification, LoanProceeds, EquityCommitment (if LoanId column exists), then the Loan. No 409; the loan and all its child records are removed.
+
+---
+
+## 9. Copy-from (Loan Creation Wizard) – covenants, guarantees, equity commitments
+
+**Requirement:** When the user creates a new loan and opts to copy from an existing loan, the backend must copy covenants, **guarantees**, and (if applicable) equity commitments to the new loan.
+
+**Implementation:** POST /api/banking/loans/:targetLoanId/copy-from/:sourceLoanId accepts body `{ copyCovenants, copyGuarantees, copyEquityCommitments }`. All three are supported; when truthy (true, 1, or string "true"), the corresponding records are copied from the source loan to the target. Guarantees are copied via INSERT INTO banking.Guarantee ... SELECT ... FROM banking.Guarantee WHERE LoanId = @sourceId with LoanId = @targetId.

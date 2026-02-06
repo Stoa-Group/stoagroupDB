@@ -758,46 +758,32 @@ export const deleteLoan = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // Block when loan has personal guarantees or any manual covenants. Auto-created key-date covenants are deleted with the loan; manual ones (DSCR, Occupancy, etc.) block delete.
-    const check = await pool.request()
-      .input('loanId', sql.Int, loanId)
-      .query(`
-        SELECT 
-          (SELECT COUNT(*) FROM banking.Guarantee WHERE LoanId = @loanId) AS GuaranteeCount,
-          (SELECT COUNT(*) FROM banking.Covenant WHERE LoanId = @loanId AND CovenantType NOT IN (N'I/O Maturity', N'Loan Maturity', N'Permanent Loan Maturity', N'Mini-Perm Maturity', N'Perm Phase Maturity')) AS ManualCovenantCount,
-          (SELECT COUNT(*) FROM banking.Loan WHERE LoanId = @loanId) AS LoanExists
-      `);
-    const row = check.recordset?.[0];
-    if (!row || !row.LoanExists) {
+    const run = (queryText: string) => pool.request().input('loanId', sql.Int, loanId).query(queryText);
+
+    // Verify loan exists
+    const exists = await run('SELECT 1 AS LoanExists FROM banking.Loan WHERE LoanId = @loanId');
+    if (!exists.recordset?.length) {
       res.status(404).json({ success: false, error: { message: 'Loan not found' } });
       return;
     }
-    const guaranteeCount = row.GuaranteeCount ?? 0;
-    const manualCovenantCount = row.ManualCovenantCount ?? 0;
-    const associations: string[] = [];
-    if (guaranteeCount > 0) associations.push('personal guarantees');
-    if (manualCovenantCount > 0) associations.push('covenants (remove or reassign manual covenants first)');
-    if (associations.length > 0) {
-      res.status(409).json({
-        success: false,
-        error: {
-          message: `Cannot delete loan: it has ${associations.join(' and ')}.`,
-          code: 'LOAN_HAS_ASSOCIATIONS',
-          associations
-        }
-      });
-      return;
-    }
 
-    // Delete only auto-created key-date covenants, then participations, then the loan
-    await pool.request()
-      .input('loanId', sql.Int, loanId)
-      .query(`
-        DELETE FROM banking.Covenant
-        WHERE LoanId = @loanId AND CovenantType IN (N'I/O Maturity', N'Loan Maturity', N'Permanent Loan Maturity', N'Mini-Perm Maturity', N'Perm Phase Maturity')
-      `);
-    await pool.request().input('loanId', sql.Int, loanId).query('DELETE FROM banking.Participation WHERE LoanId = @loanId');
-    const result = await pool.request().input('loanId', sql.Int, loanId).query('DELETE FROM banking.Loan WHERE LoanId = @loanId');
+    // Cascade delete: remove all child records that reference this loan, then delete the loan.
+    await run('DELETE FROM banking.GuaranteeBurndown WHERE LoanId = @loanId');
+    await run('DELETE FROM banking.Guarantee WHERE LoanId = @loanId');
+    await run('DELETE FROM banking.Covenant WHERE LoanId = @loanId');
+    await run('DELETE FROM banking.Participation WHERE LoanId = @loanId');
+    await run('DELETE FROM banking.DSCRTest WHERE LoanId = @loanId');
+    await run('DELETE FROM banking.LiquidityRequirement WHERE LoanId = @loanId');
+    await run('DELETE FROM banking.LoanModification WHERE LoanId = @loanId');
+    await run('DELETE FROM banking.LoanProceeds WHERE LoanId = @loanId');
+    // EquityCommitment may have LoanId (optional column)
+    const hasLoanId = await pool.request().query(`
+      SELECT 1 AS HasCol FROM sys.columns WHERE object_id = OBJECT_ID('banking.EquityCommitment') AND name = 'LoanId'
+    `);
+    if (hasLoanId.recordset?.length) {
+      await run('DELETE FROM banking.EquityCommitment WHERE LoanId = @loanId');
+    }
+    const result = await run('DELETE FROM banking.Loan WHERE LoanId = @loanId');
 
     if (result.rowsAffected[0] === 0) {
       res.status(404).json({ success: false, error: { message: 'Loan not found' } });
@@ -958,10 +944,17 @@ export const deleteLoanType = async (req: Request, res: Response, next: NextFunc
 // COPY FROM LOAN (Loan Creation Wizard – copy covenants/guarantees to new loan)
 // ============================================================
 
+function toCopyFlag(val: unknown): boolean {
+  return val === true || val === 1 || (typeof val === 'string' && val.toLowerCase() === 'true');
+}
+
 export const copyFromLoan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { targetLoanId, sourceLoanId } = req.params;
-    const { copyCovenants, copyGuarantees, copyEquityCommitments } = req.body || {};
+    const body = req.body || {};
+    const copyCovenants = toCopyFlag(body.copyCovenants);
+    const copyGuarantees = toCopyFlag(body.copyGuarantees);
+    const copyEquityCommitments = toCopyFlag(body.copyEquityCommitments);
     const targetId = parseInt(targetLoanId, 10);
     const sourceId = parseInt(sourceLoanId, 10);
     if (isNaN(targetId) || isNaN(sourceId)) {
@@ -999,7 +992,7 @@ export const copyFromLoan = async (req: Request, res: Response, next: NextFuncti
       copyEquityCommitments: 0,
     };
 
-    if (copyCovenants === true) {
+    if (copyCovenants) {
       const cov = await pool.request()
         .input('sourceId', sql.Int, sourceId)
         .input('targetId', sql.Int, targetId)
@@ -1023,7 +1016,7 @@ export const copyFromLoan = async (req: Request, res: Response, next: NextFuncti
       summary.copyCovenants = cov.rowsAffected[0] ?? 0;
     }
 
-    if (copyGuarantees === true) {
+    if (copyGuarantees) {
       const guar = await pool.request()
         .input('sourceId', sql.Int, sourceId)
         .input('targetId', sql.Int, targetId)
@@ -1036,7 +1029,7 @@ export const copyFromLoan = async (req: Request, res: Response, next: NextFuncti
       summary.copyGuarantees = guar.rowsAffected[0] ?? 0;
     }
 
-    if (copyEquityCommitments === true) {
+    if (copyEquityCommitments) {
       if (await pool.request().query(`
         SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('banking.EquityCommitment') AND name = 'LoanId'
       `).then(r => r.recordset.length > 0)) {
