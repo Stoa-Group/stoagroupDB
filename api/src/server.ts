@@ -180,6 +180,13 @@ app.get('/api', (req: Request, res: Response) => {
           update: 'PUT /api/banking/bank-targets/:id',
           delete: 'DELETE /api/banking/bank-targets/:id',
         },
+        contacts: {
+          getAll: 'GET /api/banking/contacts (?role, q)',
+          getById: 'GET /api/banking/contacts/:id',
+          create: 'POST /api/banking/contacts (auth)',
+          update: 'PUT /api/banking/contacts/:id (auth)',
+          delete: 'DELETE /api/banking/contacts/:id (auth)',
+        },
         equityCommitments: {
           getAll: 'GET /api/banking/equity-commitments',
           getById: 'GET /api/banking/equity-commitments/:id',
