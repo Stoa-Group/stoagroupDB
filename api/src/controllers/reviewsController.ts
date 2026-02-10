@@ -77,7 +77,7 @@ export const getReviewProperties = async (req: Request, res: Response, next: Nex
  * PUT /api/reviews/properties/:projectId/config
  * Update GoogleMapsUrl and/or IncludeInReviewsReport (auth required). Admin-only.
  */
-export const updatePropertyReviewConfig = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const updateReviewConfig = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const projectId = parseInt(req.params.projectId, 10);
     const { GoogleMapsUrl, IncludeInReviewsReport } = req.body;
@@ -86,36 +86,27 @@ export const updatePropertyReviewConfig = async (req: Request, res: Response, ne
       return;
     }
     const pool = await getConnection();
-    const exists = await pool.request()
+    const includeBit = IncludeInReviewsReport != null ? (IncludeInReviewsReport === true || IncludeInReviewsReport === 1) : true;
+    const updateGoogleMapsUrl = GoogleMapsUrl !== undefined ? 1 : 0;
+    const updateIncludeInReviewsReport = IncludeInReviewsReport !== undefined ? 1 : 0;
+    const sqlReq = pool.request()
       .input('ProjectId', sql.Int, projectId)
-      .query('SELECT 1 FROM reviews.PropertyReviewConfig WHERE ProjectId = @ProjectId');
-    if (exists.recordset.length === 0) {
-      await pool.request()
-        .input('ProjectId', sql.Int, projectId)
-        .input('GoogleMapsUrl', sql.NVarChar, GoogleMapsUrl != null ? GoogleMapsUrl : null)
-        .input('IncludeInReviewsReport', sql.Bit, IncludeInReviewsReport != null ? (IncludeInReviewsReport === true || IncludeInReviewsReport === 1) : true)
-        .query(`
-          INSERT INTO reviews.PropertyReviewConfig (ProjectId, GoogleMapsUrl, IncludeInReviewsReport)
-          VALUES (@ProjectId, @GoogleMapsUrl, @IncludeInReviewsReport)
-        `);
-    } else {
-      const updates: string[] = [];
-      const req = pool.request().input('ProjectId', sql.Int, projectId);
-      if (GoogleMapsUrl !== undefined) {
-        updates.push('GoogleMapsUrl = @GoogleMapsUrl');
-        req.input('GoogleMapsUrl', sql.NVarChar, GoogleMapsUrl);
-      }
-      if (IncludeInReviewsReport !== undefined) {
-        updates.push('IncludeInReviewsReport = @IncludeInReviewsReport');
-        req.input('IncludeInReviewsReport', sql.Bit, IncludeInReviewsReport === true || IncludeInReviewsReport === 1);
-      }
-      if (updates.length) {
-        updates.push('UpdatedAt = SYSDATETIME()');
-        await req.query(`
-          UPDATE reviews.PropertyReviewConfig SET ${updates.join(', ')} WHERE ProjectId = @ProjectId
-        `);
-      }
-    }
+      .input('GoogleMapsUrl', sql.NVarChar, GoogleMapsUrl != null ? GoogleMapsUrl : null)
+      .input('IncludeInReviewsReport', sql.Bit, includeBit)
+      .input('UpdateGoogleMapsUrl', sql.Bit, updateGoogleMapsUrl)
+      .input('UpdateIncludeInReviewsReport', sql.Bit, updateIncludeInReviewsReport);
+    await sqlReq.query(`
+      MERGE reviews.PropertyReviewConfig AS t
+      USING (SELECT @ProjectId AS ProjectId) AS s ON t.ProjectId = s.ProjectId
+      WHEN MATCHED THEN
+        UPDATE SET
+          GoogleMapsUrl = CASE WHEN @UpdateGoogleMapsUrl = 1 THEN @GoogleMapsUrl ELSE t.GoogleMapsUrl END,
+          IncludeInReviewsReport = CASE WHEN @UpdateIncludeInReviewsReport = 1 THEN @IncludeInReviewsReport ELSE t.IncludeInReviewsReport END,
+          UpdatedAt = SYSDATETIME()
+      WHEN NOT MATCHED BY TARGET THEN
+        INSERT (ProjectId, GoogleMapsUrl, IncludeInReviewsReport)
+        VALUES (@ProjectId, @GoogleMapsUrl, @IncludeInReviewsReport);
+    `);
     const updated = await pool.request()
       .input('ProjectId', sql.Int, projectId)
       .query(`
@@ -129,6 +120,95 @@ export const updatePropertyReviewConfig = async (req: Request, res: Response, ne
     next(error);
   }
 };
+
+/**
+ * POST /api/reviews/seed-property-urls
+ * Seed GoogleMapsUrl into reviews.PropertyReviewConfig for each property. Matches by ProjectName (trim, case-insensitive).
+ * Body: { propertyUrls: { "Property Name": "https://www.google.com/maps/...", ... } }
+ * Auth required.
+ */
+export const seedPropertyUrls = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { propertyUrls } = req.body;
+    if (!propertyUrls || typeof propertyUrls !== 'object') {
+      res.status(400).json({ success: false, error: { message: 'Body must contain propertyUrls object (property name -> Google Maps URL)' } });
+      return;
+    }
+    const pool = await getConnection();
+    const projects = await pool.request().query(`
+      SELECT ProjectId, ProjectName
+      FROM core.Project
+      WHERE LTRIM(RTRIM(ISNULL(Stage, N''))) IN (N'Lease-Up', N'Stabilized')
+    `);
+    const normalize = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const nameToId: Record<string, number> = {};
+    for (const row of projects.recordset) {
+      const name = normalize(row.ProjectName);
+      if (name) nameToId[name] = row.ProjectId;
+    }
+    let updated = 0;
+    const notFound: string[] = [];
+    const googleMapsPrefix = 'https://www.google.com/maps';
+    for (const [propName, url] of Object.entries(propertyUrls)) {
+      const u = typeof url === 'string' ? url.trim() : '';
+      if (!u || !u.startsWith(googleMapsPrefix)) continue;
+      const projectId = nameToId[normalize(propName)];
+      if (projectId == null) {
+        notFound.push(propName);
+        continue;
+      }
+      await pool.request()
+        .input('ProjectId', sql.Int, projectId)
+        .input('GoogleMapsUrl', sql.NVarChar, u)
+        .input('IncludeInReviewsReport', sql.Bit, true)
+        .input('UpdateGoogleMapsUrl', sql.Bit, 1)
+        .input('UpdateIncludeInReviewsReport', sql.Bit, 0)
+        .query(`
+          MERGE reviews.PropertyReviewConfig AS t
+          USING (SELECT @ProjectId AS ProjectId) AS s ON t.ProjectId = s.ProjectId
+          WHEN MATCHED THEN
+            UPDATE SET GoogleMapsUrl = @GoogleMapsUrl, UpdatedAt = SYSDATETIME()
+          WHEN NOT MATCHED BY TARGET THEN
+            INSERT (ProjectId, GoogleMapsUrl, IncludeInReviewsReport)
+            VALUES (@ProjectId, @GoogleMapsUrl, @IncludeInReviewsReport);
+        `);
+      updated++;
+    }
+    res.json({ success: true, data: { updated, notFound } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const EPOCH_DATE = '1969-12-31';
+
+/** Return ISO date (YYYY-MM-DD) for the 15th of the given year and month (month 1-12), or null. */
+function fifteenthOfMonth(year: number | null | undefined, month: number | null | undefined): string | null {
+  if (year == null || month == null) return null;
+  const y = Number(year);
+  const m = Number(month);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
+  const d = new Date(y, m - 1, 15);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+/** Normalize review_date: never use 1969-12-31; if missing or epoch, use 15th of review_year/review_month when available. */
+function normalizeReviewDate(r: {
+  review_date?: string | null;
+  review_year?: number | null;
+  review_month?: number | null;
+}): string | null {
+  const raw = r.review_date ?? null;
+  if (raw != null && raw !== '' && raw !== EPOCH_DATE) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) {
+      const iso = d.toISOString().slice(0, 10);
+      if (iso !== EPOCH_DATE) return iso;
+    }
+  }
+  return fifteenthOfMonth(r.review_year, r.review_month) ?? null;
+}
 
 /**
  * POST /api/reviews/bulk
@@ -147,13 +227,14 @@ export const bulkUpsertReviews = async (req: Request, res: Response, next: NextF
     let skipped = 0;
     for (const r of reviews) {
       try {
+        const reviewDate = normalizeReviewDate(r);
         await pool.request()
           .input('ProjectId', sql.Int, r.ProjectId ?? null)
           .input('Property', sql.NVarChar, r.Property ?? '')
           .input('Review_Text', sql.NVarChar(sql.MAX), r.Review_Text ?? r.review_text ?? null)
           .input('rating', sql.Decimal(5, 2), r.rating ?? null)
           .input('reviewer_name', sql.NVarChar, r.reviewer_name ?? null)
-          .input('review_date', sql.Date, r.review_date ?? null)
+          .input('review_date', sql.Date, reviewDate)
           .input('review_date_original', sql.NVarChar, r.review_date_original ?? null)
           .input('review_year', sql.Int, r.review_year ?? null)
           .input('review_month', sql.Int, r.review_month ?? null)
@@ -197,6 +278,129 @@ export const bulkUpsertReviews = async (req: Request, res: Response, next: NextF
       }
     }
     res.json({ success: true, data: { inserted, skipped, total: reviews.length } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/reviews/config/daily-alert-list
+ * List recipients for the marketing daily alert email. Joins to core.Person when PersonId is set.
+ */
+export const getDailyAlertList = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request().query(`
+      SELECT
+        d.Id,
+        d.PersonId,
+        d.Email,
+        d.DisplayName,
+        d.SortOrder,
+        d.CreatedAt,
+        p.FullName AS ContactFullName,
+        CASE WHEN d.PersonId IS NOT NULL THEN 1 ELSE 0 END AS FromCoreContact
+      FROM marketing.DailyAlertRecipient d
+      LEFT JOIN core.Person p ON p.PersonId = d.PersonId
+      ORDER BY ISNULL(d.SortOrder, 999), d.CreatedAt
+    `);
+    res.json({ success: true, data: result.recordset });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/reviews/config/daily-alert-list
+ * Add a recipient: either { PersonId } (from core.contacts) or { Email, DisplayName? } (ad-hoc). Auth required.
+ */
+export const addDailyAlertRecipient = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { PersonId, Email, DisplayName } = req.body;
+    const pool = await getConnection();
+
+    let emailToUse: string | null = null;
+    let displayNameToUse: string | null = DisplayName != null ? String(DisplayName).trim() || null : null;
+
+    if (PersonId != null && PersonId !== '') {
+      const personIdNum = parseInt(String(PersonId), 10);
+      if (!Number.isFinite(personIdNum)) {
+        res.status(400).json({ success: false, error: { message: 'Invalid PersonId' } });
+        return;
+      }
+      const person = await pool.request()
+        .input('PersonId', sql.Int, personIdNum)
+        .query('SELECT PersonId, FullName, Email FROM core.Person WHERE PersonId = @PersonId');
+      if (!person.recordset.length) {
+        res.status(404).json({ success: false, error: { message: 'Contact not found' } });
+        return;
+      }
+      const row = person.recordset[0];
+      emailToUse = (row.Email && String(row.Email).trim()) || null;
+      if (!emailToUse) {
+        res.status(400).json({ success: false, error: { message: 'Contact has no email' } });
+        return;
+      }
+      if (!displayNameToUse && row.FullName) displayNameToUse = String(row.FullName).trim() || null;
+      await pool.request()
+        .input('PersonId', sql.Int, personIdNum)
+        .input('Email', sql.NVarChar(255), emailToUse)
+        .input('DisplayName', sql.NVarChar(255), displayNameToUse)
+        .query(`
+          INSERT INTO marketing.DailyAlertRecipient (PersonId, Email, DisplayName)
+          VALUES (@PersonId, @Email, @DisplayName)
+        `);
+    } else if (Email != null && String(Email).trim()) {
+      emailToUse = String(Email).trim();
+      await pool.request()
+        .input('Email', sql.NVarChar(255), emailToUse)
+        .input('DisplayName', sql.NVarChar(255), displayNameToUse)
+        .query(`
+          INSERT INTO marketing.DailyAlertRecipient (PersonId, Email, DisplayName)
+          VALUES (NULL, @Email, @DisplayName)
+        `);
+    } else {
+      res.status(400).json({ success: false, error: { message: 'Provide PersonId or Email' } });
+      return;
+    }
+
+    const list = await pool.request().query(`
+      SELECT d.Id, d.PersonId, d.Email, d.DisplayName, d.CreatedAt,
+             CASE WHEN d.PersonId IS NOT NULL THEN 1 ELSE 0 END AS FromCoreContact
+      FROM marketing.DailyAlertRecipient d
+      ORDER BY d.CreatedAt DESC
+    `);
+    const added = list.recordset[0];
+    res.status(201).json({ success: true, data: added });
+  } catch (error: any) {
+    if (error.number === 2627 || error.code === 2627) {
+      res.status(409).json({ success: false, error: { message: 'That email is already on the list' } });
+      return;
+    }
+    next(error);
+  }
+};
+
+/**
+ * DELETE /api/reviews/config/daily-alert-list/:id
+ * Remove a recipient from the daily alert list. Auth required.
+ */
+export const deleteDailyAlertRecipient = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid id' } });
+      return;
+    }
+    const pool = await getConnection();
+    const result = await pool.request().input('Id', sql.Int, id)
+      .query('DELETE FROM marketing.DailyAlertRecipient WHERE Id = @Id; SELECT @@ROWCOUNT AS deleted');
+    const deleted = result.recordset[0]?.deleted ?? 0;
+    if (deleted === 0) {
+      res.status(404).json({ success: false, error: { message: 'Recipient not found' } });
+      return;
+    }
+    res.json({ success: true, data: { deleted: 1 } });
   } catch (error) {
     next(error);
   }

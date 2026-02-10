@@ -10,8 +10,16 @@ router.get('/', reviewsController.getReviews);
 // Active properties with review config (for dashboard + scraper)
 router.get('/properties', reviewsController.getReviewProperties);
 
-// Update property review config (GoogleMapsUrl, IncludeInReviewsReport) — admin
-router.put('/properties/:projectId/config', authenticate, reviewsController.updatePropertyReviewConfig);
+// Update config (GoogleMapsUrl, IncludeInReviewsReport) per property — admin
+router.put('/properties/:projectId/config', authenticate, reviewsController.updateReviewConfig);
+
+// Daily alert email list (from core.contacts or ad-hoc)
+router.get('/config/daily-alert-list', reviewsController.getDailyAlertList);
+router.post('/config/daily-alert-list', authenticate, reviewsController.addDailyAlertRecipient);
+router.delete('/config/daily-alert-list/:id', authenticate, reviewsController.deleteDailyAlertRecipient);
+
+// Seed Google Maps URLs for properties (admin; body: { propertyUrls: { "Property Name": "url", ... } })
+router.post('/seed-property-urls', authenticate, reviewsController.seedPropertyUrls);
 
 // Bulk upsert reviews (scraper)
 router.post('/bulk', reviewsController.bulkUpsertReviews);

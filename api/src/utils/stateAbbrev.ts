@@ -82,9 +82,27 @@ export function normalizeState(value: string | null | undefined): string | null 
   return s;
 }
 
+/** Known date-only fields returned by pipeline (and related) APIs. Stored as SQL DATE; driver returns Date (UTC midnight). */
+const DATE_ONLY_KEYS = new Set([
+  'StartDate', 'EstimatedConstructionStartDate', 'ConstructionLoanClosingDate',
+  'ExecutionDate', 'DueDiligenceDate', 'ClosingDate', 'ListedDate', 'LandClosingDate',
+]);
+
+/**
+ * Serialize a Date to "YYYY-MM-DD" using UTC date parts so that SQL DATE 2026-06-15
+ * (returned as 2026-06-15T00:00:00.000Z) is sent as "2026-06-15", avoiding timezone shift on the client.
+ */
+function dateToYYYYMMDD(d: Date): string | null {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /**
  * Recursively normalize State and HQState in API response payloads (objects or arrays).
- * So full names from the DB are returned as abbreviations.
+ * Also serializes date-only fields (StartDate, etc.) to "YYYY-MM-DD" so the client displays the correct calendar day.
  */
 export function normalizeStateInPayload<T>(payload: T): T {
   if (payload == null) return payload;
@@ -95,6 +113,12 @@ export function normalizeStateInPayload<T>(payload: T): T {
     const out = { ...payload } as Record<string, unknown>;
     if (typeof out.State === 'string') out.State = normalizeState(out.State);
     if (typeof out.HQState === 'string') out.HQState = normalizeState(out.HQState);
+    for (const key of DATE_ONLY_KEYS) {
+      if (key in out && out[key] instanceof Date) {
+        const str = dateToYYYYMMDD(out[key] as Date);
+        if (str != null) out[key] = str;
+      }
+    }
     return out as T;
   }
   return payload;
