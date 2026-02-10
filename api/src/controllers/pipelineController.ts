@@ -14,6 +14,24 @@ import {
 } from '../config/azureBlob';
 import { normalizeState, normalizeStateInPayload } from '../utils/stateAbbrev';
 
+/**
+ * Normalize a date value to YYYY-MM-DD string for sql.Date. Avoids timezone shift:
+ * "2025-06-15" or ISO string stay as 2025-06-15; Date uses local calendar date.
+ */
+function toDateOnlyString(value: string | Date | null | undefined): string | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string') {
+    const s = value.trim().slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    return null;
+  }
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  return null;
+}
+
 // ============================================================
 // UNDER CONTRACT CONTROLLER
 // ============================================================
@@ -193,9 +211,9 @@ export const createUnderContract = async (req: Request, res: Response, next: Nex
       .input('Acreage', sql.Decimal(18, 4), Acreage)
       .input('LandPrice', sql.Decimal(18, 2), LandPrice)
       .input('SqFtPrice', sql.Decimal(18, 2), sqFtPrice)
-      .input('ExecutionDate', sql.Date, ExecutionDate)
-      .input('DueDiligenceDate', sql.Date, DueDiligenceDate)
-      .input('ClosingDate', sql.Date, ClosingDate)
+      .input('ExecutionDate', sql.Date, toDateOnlyString(ExecutionDate))
+      .input('DueDiligenceDate', sql.Date, toDateOnlyString(DueDiligenceDate))
+      .input('ClosingDate', sql.Date, toDateOnlyString(ClosingDate))
       .input('PurchasingEntity', sql.NVarChar, PurchasingEntity)
       .input('Cash', sql.Bit, Cash)
       .input('OpportunityZone', sql.Bit, OpportunityZone)
@@ -307,15 +325,15 @@ export const updateUnderContract = async (req: Request, res: Response, next: Nex
     }
     if (ExecutionDate !== undefined) {
       fields.push('ExecutionDate = @ExecutionDate');
-      request.input('ExecutionDate', sql.Date, ExecutionDate);
+      request.input('ExecutionDate', sql.Date, toDateOnlyString(ExecutionDate));
     }
     if (DueDiligenceDate !== undefined) {
       fields.push('DueDiligenceDate = @DueDiligenceDate');
-      request.input('DueDiligenceDate', sql.Date, DueDiligenceDate);
+      request.input('DueDiligenceDate', sql.Date, toDateOnlyString(DueDiligenceDate));
     }
     if (ClosingDate !== undefined) {
       fields.push('ClosingDate = @ClosingDate');
-      request.input('ClosingDate', sql.Date, ClosingDate);
+      request.input('ClosingDate', sql.Date, toDateOnlyString(ClosingDate));
     }
     if (PurchasingEntity !== undefined) {
       fields.push('PurchasingEntity = @PurchasingEntity');
@@ -578,12 +596,12 @@ export const createCommercialListed = async (req: Request, res: Response, next: 
     // Insert Land Development specific data
     const result = await pool.request()
       .input('ProjectId', sql.Int, ProjectId)
-      .input('ListedDate', sql.Date, ListedDate)
+      .input('ListedDate', sql.Date, toDateOnlyString(ListedDate))
       .input('Acreage', sql.Decimal(18, 4), Acreage)
       .input('LandPrice', sql.Decimal(18, 2), LandPrice)
       .input('ListingStatus', sql.NVarChar(50), ListingStatus)
-      .input('DueDiligenceDate', sql.Date, DueDiligenceDate)
-      .input('ClosingDate', sql.Date, ClosingDate)
+      .input('DueDiligenceDate', sql.Date, toDateOnlyString(DueDiligenceDate))
+      .input('ClosingDate', sql.Date, toDateOnlyString(ClosingDate))
       .input('Owner', sql.NVarChar, Owner)
       .input('PurchasingEntity', sql.NVarChar, PurchasingEntity)
       .input('Broker', sql.NVarChar, Broker)
@@ -664,7 +682,7 @@ export const updateCommercialListed = async (req: Request, res: Response, next: 
 
     if (ListedDate !== undefined) {
       fields.push('ListedDate = @ListedDate');
-      request.input('ListedDate', sql.Date, ListedDate);
+      request.input('ListedDate', sql.Date, toDateOnlyString(ListedDate));
     }
     if (Acreage !== undefined) {
       fields.push('Acreage = @Acreage');
@@ -680,11 +698,11 @@ export const updateCommercialListed = async (req: Request, res: Response, next: 
     }
     if (DueDiligenceDate !== undefined) {
       fields.push('DueDiligenceDate = @DueDiligenceDate');
-      request.input('DueDiligenceDate', sql.Date, DueDiligenceDate);
+      request.input('DueDiligenceDate', sql.Date, toDateOnlyString(DueDiligenceDate));
     }
     if (ClosingDate !== undefined) {
       fields.push('ClosingDate = @ClosingDate');
-      request.input('ClosingDate', sql.Date, ClosingDate);
+      request.input('ClosingDate', sql.Date, toDateOnlyString(ClosingDate));
     }
     if (Owner !== undefined) {
       fields.push('Owner = @Owner');
@@ -1165,13 +1183,13 @@ export const createClosedProperty = async (req: Request, res: Response, next: Ne
     const result = await pool.request()
       .input('ProjectId', sql.Int, ProjectId)
       .input('Status', sql.NVarChar, Status)
-      .input('LandClosingDate', sql.Date, ClosingDate)
+      .input('LandClosingDate', sql.Date, toDateOnlyString(ClosingDate))
       .input('Acreage', sql.Decimal(18, 4), Acreage)
       .input('Units', sql.Int, Units)
       .input('Price', sql.Decimal(18, 2), Price)
       .input('PricePerSF', sql.Decimal(18, 2), PricePerSF)
       .input('ActOfSale', sql.NVarChar, ActOfSale)
-      .input('DueDiligenceDate', sql.Date, DueDiligenceDate)
+      .input('DueDiligenceDate', sql.Date, toDateOnlyString(DueDiligenceDate))
       .input('PurchasingEntity', sql.NVarChar, PurchasingEntity)
       .input('CashFlag', sql.Bit, CashFlag)
       .query(`
@@ -1299,7 +1317,7 @@ export const updateClosedProperty = async (req: Request, res: Response, next: Ne
     }
     if (ClosingDate !== undefined) {
       fields.push('LandClosingDate = @LandClosingDate');
-      request.input('LandClosingDate', sql.Date, ClosingDate);
+      request.input('LandClosingDate', sql.Date, toDateOnlyString(ClosingDate));
     }
     if (Acreage !== undefined) {
       fields.push('Acreage = @Acreage');
@@ -1323,7 +1341,7 @@ export const updateClosedProperty = async (req: Request, res: Response, next: Ne
     }
     if (DueDiligenceDate !== undefined) {
       fields.push('DueDiligenceDate = @DueDiligenceDate');
-      request.input('DueDiligenceDate', sql.Date, DueDiligenceDate);
+      request.input('DueDiligenceDate', sql.Date, toDateOnlyString(DueDiligenceDate));
     }
     if (PurchasingEntity !== undefined) {
       fields.push('PurchasingEntity = @PurchasingEntity');
@@ -1854,7 +1872,7 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
             .input('Units', sql.Int, Units)
             .input('ProductType', sql.NVarChar(50), ProductType)
             .input('Stage', sql.NVarChar(50), Stage)
-            .input('EstimatedConstructionStartDate', sql.Date, EstimatedConstructionStartDate)
+            .input('EstimatedConstructionStartDate', sql.Date, toDateOnlyString(EstimatedConstructionStartDate))
             .query(`
               INSERT INTO core.Project (ProjectName, City, State, Region, Units, ProductType, Stage, EstimatedConstructionStartDate)
               VALUES (@ProjectName, @City, @State, @Region, @Units, @ProductType, @Stage, @EstimatedConstructionStartDate);
@@ -1920,7 +1938,7 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
       }
       if (EstimatedConstructionStartDate !== undefined) {
         updateFields.push('EstimatedConstructionStartDate = @EstimatedConstructionStartDate');
-        updateRequest.input('EstimatedConstructionStartDate', sql.Date, EstimatedConstructionStartDate);
+        updateRequest.input('EstimatedConstructionStartDate', sql.Date, toDateOnlyString(EstimatedConstructionStartDate));
       }
       
       updateFields.push('UpdatedAt = SYSDATETIME()');
@@ -1955,18 +1973,18 @@ export const createDealPipeline = async (req: Request, res: Response, next: Next
     const result = await pool.request()
       .input('ProjectId', sql.Int, actualProjectId)
       .input('Bank', sql.NVarChar(255), Bank)
-      .input('StartDate', sql.Date, StartDate)
+      .input('StartDate', sql.Date, toDateOnlyString(StartDate))
       .input('UnitCount', sql.Int, UnitCount)
       .input('PreConManagerId', sql.Int, PreConManagerId)
-      .input('ConstructionLoanClosingDate', sql.Date, ConstructionLoanClosingDate)
+      .input('ConstructionLoanClosingDate', sql.Date, toDateOnlyString(ConstructionLoanClosingDate))
       .input('Notes', sql.NVarChar(sql.MAX), Notes)
       .input('Priority', sql.NVarChar(20), Priority)
       .input('Acreage', sql.Decimal(18, 4), Acreage)
       .input('LandPrice', sql.Decimal(18, 2), LandPrice)
       .input('SqFtPrice', sql.Decimal(18, 2), sqFtPrice)
-      .input('ExecutionDate', sql.Date, ExecutionDate)
-      .input('DueDiligenceDate', sql.Date, DueDiligenceDate)
-      .input('ClosingDate', sql.Date, ClosingDate)
+      .input('ExecutionDate', sql.Date, toDateOnlyString(ExecutionDate))
+      .input('DueDiligenceDate', sql.Date, toDateOnlyString(DueDiligenceDate))
+      .input('ClosingDate', sql.Date, toDateOnlyString(ClosingDate))
       .input('PurchasingEntity', sql.NVarChar(255), PurchasingEntity)
       .input('Cash', sql.Bit, Cash)
       .input('OpportunityZone', sql.Bit, OpportunityZone)
@@ -2194,7 +2212,7 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
       }
       if (EstimatedConstructionStartDate !== undefined) {
         updateFields.push('EstimatedConstructionStartDate = @EstimatedConstructionStartDate');
-        updateRequest.input('EstimatedConstructionStartDate', sql.Date, EstimatedConstructionStartDate);
+        updateRequest.input('EstimatedConstructionStartDate', sql.Date, toDateOnlyString(EstimatedConstructionStartDate));
       }
       
       updateFields.push('UpdatedAt = SYSDATETIME()');
@@ -2228,12 +2246,12 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
       request.input('Bank', sql.NVarChar(255), Bank);
     }
     if (StartDate !== undefined) {
-      fields.push('StartDate = @StartDate');
-      const startDateVal = StartDate == null || StartDate === '' ? null : new Date(StartDate);
-      if (startDateVal instanceof Date && isNaN(startDateVal.getTime())) {
+      const startDateVal = toDateOnlyString(StartDate);
+      if (StartDate != null && StartDate !== '' && startDateVal === null) {
         res.status(400).json({ success: false, error: { message: 'StartDate must be a valid date (e.g. YYYY-MM-DD)' } });
         return;
       }
+      fields.push('StartDate = @StartDate');
       request.input('StartDate', sql.Date, startDateVal);
     }
     if (UnitCount !== undefined) {
@@ -2246,7 +2264,7 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
     }
     if (ConstructionLoanClosingDate !== undefined) {
       fields.push('ConstructionLoanClosingDate = @ConstructionLoanClosingDate');
-      request.input('ConstructionLoanClosingDate', sql.Date, ConstructionLoanClosingDate);
+      request.input('ConstructionLoanClosingDate', sql.Date, toDateOnlyString(ConstructionLoanClosingDate));
     }
     if (Notes !== undefined) {
       fields.push('Notes = @Notes');
@@ -2266,15 +2284,15 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
     }
     if (ExecutionDate !== undefined) {
       fields.push('ExecutionDate = @ExecutionDate');
-      request.input('ExecutionDate', sql.Date, ExecutionDate);
+      request.input('ExecutionDate', sql.Date, toDateOnlyString(ExecutionDate));
     }
     if (DueDiligenceDate !== undefined) {
       fields.push('DueDiligenceDate = @DueDiligenceDate');
-      request.input('DueDiligenceDate', sql.Date, DueDiligenceDate);
+      request.input('DueDiligenceDate', sql.Date, toDateOnlyString(DueDiligenceDate));
     }
     if (ClosingDate !== undefined) {
       fields.push('ClosingDate = @ClosingDate');
-      request.input('ClosingDate', sql.Date, ClosingDate);
+      request.input('ClosingDate', sql.Date, toDateOnlyString(ClosingDate));
     }
     if (PurchasingEntity !== undefined) {
       fields.push('PurchasingEntity = @PurchasingEntity');
