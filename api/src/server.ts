@@ -323,6 +323,10 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
   getConnection()
     .then(() => {
+      if (process.env.SKIP_LEASING_STARTUP_REBUILD === 'true') {
+        console.log('[leasing] Skipping startup snapshot rebuild (SKIP_LEASING_STARTUP_REBUILD=true)');
+        return;
+      }
       rebuildDashboardSnapshot().then(() => console.log('[leasing] Dashboard snapshot ready')).catch((err) => console.warn('[leasing] Startup snapshot rebuild:', err?.message ?? err));
     })
     .catch(() => {});

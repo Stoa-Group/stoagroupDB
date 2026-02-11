@@ -617,8 +617,14 @@ export async function rebuildDashboardSnapshot(): Promise<void> {
   try {
     const raw = await getAllForDashboard();
     const dashboard = await buildDashboardFromRaw(raw);
-    const json = JSON.stringify(dashboardPayloadToJsonSafe(dashboard));
-    await upsertDashboardSnapshot(json);
+    const safe = dashboardPayloadToJsonSafe(dashboard);
+    const now = new Date();
+    const fullResponse = JSON.stringify({
+      success: true,
+      dashboard: safe,
+      _meta: { source: AGGREGATION_SOURCE, fromSnapshot: true, builtAt: now.toISOString() },
+    });
+    await upsertDashboardSnapshot(fullResponse);
   } catch (err) {
     console.error('rebuildDashboardSnapshot failed:', err instanceof Error ? err.message : err);
   }
@@ -639,12 +645,18 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
     const snapshot = await getDashboardSnapshot();
     console.log('[leasing/dashboard] snapshot fetch', Date.now() - t0, 'ms', snapshot?.payload ? 'hit' : 'miss');
     if (snapshot?.payload) {
-      const dashboard = JSON.parse(snapshot.payload) as LeasingDashboardPayload;
-      res.json({
-        success: true,
-        dashboard,
-        _meta: { source: AGGREGATION_SOURCE, asOf, fromSnapshot: true, builtAt: snapshot.builtAt?.toISOString?.() },
-      });
+      const payload = snapshot.payload;
+      if (payload.startsWith('{"success":')) {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(payload);
+      } else {
+        const dashboard = JSON.parse(payload) as LeasingDashboardPayload;
+        res.json({
+          success: true,
+          dashboard,
+          _meta: { source: AGGREGATION_SOURCE, asOf, fromSnapshot: true, builtAt: snapshot.builtAt?.toISOString?.() },
+        });
+      }
       console.log('[leasing/dashboard] sent from snapshot', Date.now() - t0, 'ms');
       return;
     }
@@ -655,7 +667,12 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
     const dashboard = await buildDashboardFromRaw(raw);
     console.log('[leasing/dashboard] build done', Date.now() - t0, 'ms');
     const safe = dashboardPayloadToJsonSafe(dashboard);
-    await upsertDashboardSnapshot(JSON.stringify(safe));
+    const fullResponse = JSON.stringify({
+      success: true,
+      dashboard: safe,
+      _meta: { source: AGGREGATION_SOURCE, asOf },
+    });
+    await upsertDashboardSnapshot(fullResponse);
     res.json({
       success: true,
       dashboard: safe,

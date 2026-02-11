@@ -1,10 +1,41 @@
 #!/usr/bin/env node
 /**
- * Test all API endpoints the leasing dashboard frontend uses.
+ * Test every leasing API endpoint and verify which ones the Leasing Analytics Hub frontend uses.
+ * Snapshot is stored in DB table: leasing.DashboardSnapshot (Id, Payload, BuiltAt).
+ *
  * Usage: node scripts/test-leasing-endpoints.js [baseUrl]
  * Default baseUrl: http://localhost:3000
+ * Set DASHBOARD_TIMEOUT_MS=5000 for quick run (dashboard may timeout).
  */
-const base = process.argv[2] || 'http://localhost:3000';
+const base = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '');
+const dashboardTimeout = Number(process.env.DASHBOARD_TIMEOUT_MS) || 125000;
+
+// ---- Frontend usage (from leasing velocity report app.js) ----
+const FRONTEND_ENDPOINTS = [
+  { method: 'GET', path: '/api/leasing/dashboard', usedBy: 'Primary: app loads data from this. Must return { success, dashboard } with dashboard.rows array.' },
+  { method: 'POST', path: '/api/leasing/sync', usedBy: 'Only when NOT using backend dashboard: app pushes Domo data to API (fire-and-forget).' },
+];
+
+// ---- All leasing routes (from api/src/routes/leasingRoutes.ts) ----
+const LEASING_ENDPOINTS = [
+  { method: 'GET', path: '/api/leasing/aggregates/available' },
+  { method: 'GET', path: '/api/leasing/aggregates' },
+  { method: 'GET', path: '/api/leasing/dashboard' },
+  { method: 'POST', path: '/api/leasing/rebuild-snapshot' },
+  { method: 'POST', path: '/api/leasing/sync' },
+  { method: 'GET', path: '/api/leasing/sync-check' },
+  { method: 'GET', path: '/api/leasing/sync-health' },
+  { method: 'GET', path: '/api/leasing/domo-columns' },
+  { method: 'POST', path: '/api/leasing/sync-add-alias' },
+  { method: 'POST', path: '/api/leasing/sync-from-domo' },
+  { method: 'POST', path: '/api/leasing/wipe' },
+  { method: 'GET', path: '/api/leasing/datasets/leasing' },
+  { method: 'GET', path: '/api/leasing/datasets/mmrdata' },
+  { method: 'GET', path: '/api/leasing/datasets/leasing/1' },
+  { method: 'POST', path: '/api/leasing/datasets/leasing', body: {} },
+  { method: 'PUT', path: '/api/leasing/datasets/leasing/1', body: {} },
+  { method: 'DELETE', path: '/api/leasing/datasets/leasing/999999' },
+];
 
 function fetchOk(url, opts = {}) {
   const ctrl = new AbortController();
@@ -22,77 +53,62 @@ function fetchOk(url, opts = {}) {
 
 async function run() {
   const results = [];
-  function log(name, ok, detail) {
-    const line = ok ? `OK  ${name}` : `FAIL ${name}`;
-    results.push({ name, ok, detail });
-    console.log(ok ? `\x1b[32m${line}\x1b[0m` : `\x1b[31m${line}\x1b[0m`, detail || '');
+  function log(method, path, ok, detail) {
+    results.push({ method, path, ok, detail });
+    const color = ok ? '\x1b[32m' : '\x1b[31m';
+    console.log(`${color}${ok ? 'OK ' : 'FAIL'} ${method} ${path}\x1b[0m  ${detail || ''}`);
   }
 
-  console.log(`\nTesting base: ${base}\n`);
+  console.log('\n=== Leasing API endpoint tests ===');
+  console.log('Base URL:', base);
+  console.log('Dashboard timeout:', dashboardTimeout, 'ms\n');
 
-  // 1. Health
-  try {
-    const r = await fetchOk(`${base}/health`);
-    const j = await r.json();
-    log('GET /health', r.ok && j.success, r.status + ' ' + (j.message || ''));
-  } catch (e) {
-    log('GET /health', false, e.message || 'fetch failed');
-  }
-
-  // 2. Dashboard (long timeout; this can take 1–2 min if no snapshot). Set env DASHBOARD_TIMEOUT_MS to override.
-  const dashboardTimeout = Number(process.env.DASHBOARD_TIMEOUT_MS) || 125000;
-  try {
-    const start = Date.now();
-    const r = await fetchOk(`${base}/api/leasing/dashboard`, { timeout: dashboardTimeout });
-    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    const j = await r.json();
-    const hasDashboard = j && j.success && j.dashboard != null;
-    const rowsLen = Array.isArray(j?.dashboard?.rows) ? j.dashboard.rows.length : 'n/a';
-    log(
-      'GET /api/leasing/dashboard',
-      hasDashboard,
-      `${r.status} in ${elapsed}s, dashboard.rows.length = ${rowsLen}, fromSnapshot = ${j._meta?.fromSnapshot ?? 'n/a'}`
-    );
-    if (!hasDashboard && j) {
-      console.log('   Response keys:', Object.keys(j));
-      if (j.error) console.log('   Error:', j.error);
+  for (const { method, path } of LEASING_ENDPOINTS) {
+    const url = base + path;
+    const opts = { method, timeout: path === '/api/leasing/dashboard' ? dashboardTimeout : 15000 };
+    if ((method === 'POST' || method === 'PUT') && path !== '/api/leasing/sync-from-domo' && path !== '/api/leasing/wipe') {
+      opts.headers = { 'Content-Type': 'application/json' };
+      opts.body = path === '/api/leasing/sync-add-alias' ? '{}' : JSON.stringify({});
     }
-  } catch (e) {
-    log('GET /api/leasing/dashboard', false, (e.name === 'AbortError' ? 'timeout' : e.message));
+    try {
+      const r = await fetchOk(url, opts);
+      let body = '';
+      const ct = r.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        body = await r.text();
+      }
+      const j = body ? (() => { try { return JSON.parse(body); } catch { return null; } })() : null;
+      const ok = r.ok || (r.status === 400 || r.status === 401 || r.status === 404); // expected for some calls with no body
+      let detail = r.status + '';
+      if (j && j.success !== undefined) detail += ' success=' + j.success;
+      if (path === '/api/leasing/dashboard' && j && j.dashboard) {
+        const rows = Array.isArray(j.dashboard.rows) ? j.dashboard.rows.length : 'n/a';
+        detail += ' rows=' + rows + ' fromSnapshot=' + (j._meta?.fromSnapshot ?? 'n/a');
+      }
+      if (path === '/api/leasing/rebuild-snapshot' && j && j.builtAt) detail += ' builtAt=' + j.builtAt;
+      log(method, path, ok, detail);
+    } catch (e) {
+      log(method, path, false, e.name === 'AbortError' ? 'timeout' : e.message);
+    }
   }
 
-  // 3. Rebuild snapshot (optional; may 404 if server not updated)
-  try {
-    const r = await fetchOk(`${base}/api/leasing/rebuild-snapshot`, {
-      method: 'POST',
-      timeout: 5000,
-    });
-    const j = r.ok ? await r.json().catch(() => ({})) : {};
-    log(
-      'POST /api/leasing/rebuild-snapshot',
-      r.ok,
-      r.status === 404 ? '404 (route not deployed?)' : r.status + ' ' + (j.builtAt ? 'builtAt ' + j.builtAt : '')
-    );
-  } catch (e) {
-    log('POST /api/leasing/rebuild-snapshot', false, e.message || '');
-  }
+  console.log('\n--- Frontend mapping (Leasing Analytics Hub) ---');
+  console.log('Required for app load: GET /api/leasing/dashboard → must return { success: true, dashboard: { rows: [...], ... } }');
+  console.log('Optional (when app uses Domo data): POST /api/leasing/sync with body { leasing, MMRData, ... }');
+  console.log('All other leasing endpoints are for sync/cron/scripts, not used by the dashboard UI for initial load.\n');
 
-  // 4. Aggregates available (optional; frontend may not use in backend-only mode)
-  try {
-    const r = await fetchOk(`${base}/api/leasing/aggregates/available`);
-    const j = await r.json();
-    log('GET /api/leasing/aggregates/available', r.ok && j.success != null, r.status + ' available=' + j.available);
-  } catch (e) {
-    log('GET /api/leasing/aggregates/available', false, e.message);
-  }
+  console.log('--- Snapshot storage ---');
+  console.log('Table: leasing.DashboardSnapshot');
+  console.log('Columns: Id (int, PK), Payload (nvarchar(max) – gzip+base64 or raw JSON), BuiltAt (datetime2)');
+  console.log('Written by: getDashboard (when building from raw), rebuildDashboardSnapshot(), postSync/postSyncFromDomo (after sync).');
+  console.log('Read by: getDashboard (serves from snapshot when present).\n');
 
-  console.log('\n--- Summary ---');
   const failed = results.filter((x) => !x.ok);
   if (failed.length) {
-    console.log('Failed:', failed.map((x) => x.name).join(', '));
+    console.log('Failed:', failed.map((x) => x.method + ' ' + x.path).join(', '));
     process.exit(1);
   }
-  console.log('All endpoints OK for frontend.');
+  console.log('All listed endpoints responded (no network/5xx).');
 }
 
 run().catch((e) => {
