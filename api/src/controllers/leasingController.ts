@@ -635,15 +635,6 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
   try {
     const asOf = typeof req.query.asOf === 'string' ? req.query.asOf : undefined;
 
-    if (AGGREGATION_SOURCE === 'none') {
-      res.json({
-        success: true,
-        dashboard: null,
-        _meta: { source: 'none', message: 'Set LEASING_AGGREGATION_SOURCE and implement dashboard calculation in leasingController.' },
-      });
-      return;
-    }
-
     const snapshot = await getDashboardSnapshot();
     if (snapshot?.payload) {
       const dashboard = JSON.parse(snapshot.payload) as LeasingDashboardPayload;
