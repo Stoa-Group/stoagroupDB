@@ -159,6 +159,8 @@ The Node server is also set to allow long-lived requests (see `api/src/server.ts
 - **"Timeout: Request failed to complete in 15000ms"** (or similar) on **pricing** or **portfolioUnitDetails**: The script uses a 15‑minute client timeout; a **15s limit is usually from the host or reverse proxy**. Increase the **request timeout** as above (at least 300s) for `/api/leasing/sync` and `/api/leasing/sync-from-domo`.
 - **413 "request entity too large"**: Increase the API body size limit (e.g. `JSON_BODY_LIMIT` / Express `express.json({ limit })`); the repo default is 300mb.
 - **"skipped" for a dataset**: The backend skips when it already synced that dataset today with the same data hash. That’s expected; run again another day or after Domo data changes to sync.
+- **`rebuildDashboardSnapshot failed: Timeout: Request failed to complete in 15000ms`**: The DB driver (mssql) was using a 15s request timeout. The API now sets `requestTimeout: 300000` (5 min) in `api/src/config/database.ts` so dashboard/snapshot reads can finish. Optional env: `DB_REQUEST_TIMEOUT_MS=300000`.
+- **Render: sync-from-domo returns at exactly 300s**: Render may cap request duration at 5 minutes. If sync-from-domo hits that, use the Python script with `--skip-pud` from a machine or cron, or run sync-from-domo less often.
 
 ---
 
