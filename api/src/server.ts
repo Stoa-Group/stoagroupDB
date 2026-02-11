@@ -31,8 +31,16 @@ const PORT = Number(process.env.PORT) || 3000;
 
 // Middleware
 app.use(helmet());
+// CORS: allow Domo (*.domo.com) always so Leasing dashboard can call from Domo Custom Apps; plus CORS_ORIGINS if set.
 app.use(cors({
-  origin: process.env.CORS_ORIGINS?.split(',') || '*',
+  origin: (origin, cb) => {
+    const allowed = process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) || [];
+    if (origin && /\.domo\.com$/i.test(origin)) return cb(null, origin);
+    if (allowed.length === 0) return cb(null, true);
+    if (origin && allowed.includes(origin)) return cb(null, origin);
+    if (allowed.includes('*')) return cb(null, true);
+    cb(null, allowed[0]);
+  },
   credentials: true,
 }));
 // Large limit for leasing sync (e.g. 200k+ PUD rows); default 100kb would reject

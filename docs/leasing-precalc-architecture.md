@@ -7,7 +7,7 @@ This doc describes the target architecture for the Leasing Velocity / Leasing An
 ## Current state
 
 - **Backend** (`stoagroupDB`): `GET /api/leasing/dashboard` returns a single payload built on demand from raw DB tables (UnitMix, Pricing, Recents, PortfolioUnitDetails, etc.) via `buildDashboardFromRaw()`. No precomputed cache tables.
-- **Frontend** (Leasing Velocity Report `app.js`): When using the backend, it calls the dashboard API once and applies the payload with `applyBackendDashboard()`. Phase 2 (unit-level Domo fetches) is skipped when `window.__LV_DATA_FROM_BACKEND__` is set, and "Loading unit-level data…" is hidden.
+- **Frontend** (Leasing Velocity Report `app.js`): **Backend-only.** The dashboard does not use Domo datasets at all. It requires `window.__LV_AGGREGATION_API__` to be set to the API base URL. On load it fetches `GET /api/leasing/dashboard` once, applies the payload with `applyBackendDashboard()`, and renders. Phase 1 and Phase 2 (Domo fetches) are never run. If the API URL is missing or the request fails, the app shows an error and does not fall back to Domo.
 - **Floor Plans / Rent Analytics / Historical Gross Rent**: These views need `unitmixStruct`, `pricingByPlan`, `pricingTS`, and `portfolioUnitDetails` for the selected property. If the backend payload has empty or mismatched data (e.g. property key normalization), the UI shows "No data available for Floor Plans" or "No data available for Rent Analytics".
 
 ---
