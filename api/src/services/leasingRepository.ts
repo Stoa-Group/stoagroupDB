@@ -109,6 +109,39 @@ function mergeOnClause(keyCols: string[]): string {
 }
 
 /**
+ * Dedupe rows by business key; keep last occurrence (newer wins when synced same day).
+ * keyFn(row) should return a stable string key (e.g. tab-joined trimmed values).
+ */
+export function dedupeRowsByKey(
+  rows: Record<string, unknown>[],
+  keyFn: (row: Record<string, unknown>) => string
+): Record<string, unknown>[] {
+  const lastIndexByKey = new Map<string, number>();
+  rows.forEach((row, i) => lastIndexByKey.set(keyFn(row), i));
+  return rows.filter((_, i) => lastIndexByKey.get(keyFn(rows[i])) === i);
+}
+
+/**
+ * Remove duplicate rows by key, keeping the one with the latest SyncedAt (and then Id).
+ * Run after upsert so same-day syncs never leave duplicate keys.
+ */
+async function removeDuplicateKeysKeepNewest(
+  tx: sql.Transaction,
+  table: string,
+  keyCols: string[]
+): Promise<void> {
+  const partitionCols = keyCols.map((c) => `[${c}]`).join(', ');
+  const sqlStr = `
+    WITH Ranked AS (
+      SELECT Id, ROW_NUMBER() OVER (PARTITION BY ${partitionCols} ORDER BY SyncedAt DESC, Id DESC) AS rn
+      FROM ${table}
+    )
+    DELETE FROM ${table} WHERE Id IN (SELECT Id FROM Ranked WHERE rn > 1);
+  `;
+  await tx.request().query(sqlStr);
+}
+
+/**
  * Run batched MERGE (upsert): update existing rows by key, insert new ones. No truncate.
  * Used when replace=false so sync appends/updates instead of wiping the table.
  */
@@ -157,7 +190,9 @@ async function batchInsert(
   if (replace) {
     await tx.request().query(`TRUNCATE TABLE ${table}`);
   } else if (keyCols && keyCols.length > 0) {
-    return batchUpsert(tx, table, keyCols, columns, rows, rowToValues);
+    const n = await batchUpsert(tx, table, keyCols, columns, rows, rowToValues);
+    await removeDuplicateKeysKeepNewest(tx, table, keyCols);
+    return n;
   }
   if (rows.length === 0) return 0;
   const colList = columns.join(', ');
@@ -339,6 +374,12 @@ const T_LEASING = `${LEASING_SCHEMA}.Leasing`;
 const LEASING_COLS = ['Property', 'Units', 'LeasesNeeded', 'NewLeasesCurrentGrossRent', 'LeasingVelocity7Day', 'LeasingVelocity28Day', 'MonthOf', 'BatchTimestamp'];
 const LEASING_KEYS = ['Property', 'MonthOf'];
 export async function syncLeasing(rows: Record<string, unknown>[], replace = true): Promise<number> {
+  const keyFn = (r: Record<string, unknown>) =>
+    [
+      str(getValWithOverrides(LEASING_ALIAS, 'Property', r, 'Property Name', 'PropertyName', 'Community', 'Asset')),
+      str(getValWithOverrides(LEASING_ALIAS, 'MonthOf', r, 'Month Of', 'Month', 'Report Month', 'As Of Date', 'AsOfDate', 'ReportDate', 'Date')),
+    ].map((v) => String(v ?? '').trim()).join('\t');
+  rows = dedupeRowsByKey(rows, keyFn);
   const pool = await getConnection();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -367,6 +408,12 @@ const T_MMR = `${LEASING_SCHEMA}.MMRData`;
 const MMR_COLS = ['Property', 'Location', 'TotalUnits', 'OccupancyPercent', 'CurrentLeasedPercent', 'MI', 'MO', 'FirstVisit', 'Applied', 'Canceled', 'Denied', 'T12LeasesExpired', 'T12LeasesRenewed', 'Delinquent', 'OccupiedRent', 'BudgetedRent', 'CurrentMonthIncome', 'BudgetedIncome', 'MoveInRent', 'OccUnits', 'Week3EndDate', 'Week3MoveIns', 'Week3MoveOuts', 'Week3OccUnits', 'Week3OccPercent', 'Week4EndDate', 'Week4MoveIns', 'Week4MoveOuts', 'Week4OccUnits', 'Week4OccPercent', 'Week7EndDate', 'Week7MoveIns', 'Week7MoveOuts', 'Week7OccUnits', 'Week7OccPercent', 'InServiceUnits', 'T12LeaseBreaks', 'BudgetedOccupancyCurrentMonth', 'BudgetedOccupancyPercentCurrentMonth', 'BudgetedLeasedPercentCurrentMonth', 'BudgetedLeasedCurrentMonth', 'ReportDate', 'ConstructionStatus', 'Rank', 'PreviousOccupancyPercent', 'PreviousLeasedPercent', 'PreviousDelinquentUnits', 'WeekStart', 'LatestDate', 'City', 'State', 'Status', 'FinancingStatus', 'ProductType', 'Units', 'FullAddress', 'Latitude', 'Longitude', 'Region', 'LatestConstructionStatus', 'BirthOrder', 'NetLsd'];
 const MMR_KEYS = ['Property', 'ReportDate'];
 export async function syncMMRData(rows: Record<string, unknown>[], replace = true): Promise<number> {
+  const keyFn = (r: Record<string, unknown>) =>
+    [
+      str(getValWithOverrides(MMR_ALIAS, 'Property', r, 'Property Name', 'PropertyName', 'Community', 'Asset')),
+      str(getValWithOverrides(MMR_ALIAS, 'ReportDate', r, 'Report Date')),
+    ].map((v) => String(v ?? '').trim()).join('\t');
+  rows = dedupeRowsByKey(rows, keyFn);
   const pool = await getConnection();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -392,6 +439,14 @@ const T_UTRADE = `${LEASING_SCHEMA}.UnitByUnitTradeout`;
 const UTRADE_COLS = ['FloorPlan', 'UnitDetailsUnitType', 'UnitDetailsBuilding', 'UnitDetailsUnit', 'UnitDetailsSqFt', 'CurrentLeaseRateType', 'CurrentLeaseLeaseType', 'CurrentLeaseAppSignedDate', 'CurrentLeaseLeaseStart', 'CurrentLeaseLeaseEnd', 'CurrentLeaseTerm', 'CurrentLeasePrem', 'CurrentLeaseGrossRent', 'CurrentLeaseConc', 'CurrentLeaseEffRent', 'PreviousLeaseRateType', 'PreviousLeaseLeaseStart', 'PreviousLeaseScheduledLeaseEnd', 'PreviousLeaseActualLeaseEnd', 'PreviousLeaseTerm', 'PreviousLeasePrem', 'PreviousLeaseGrossRent', 'PreviousLeaseConc', 'PreviousLeaseEffRent', 'VacantDays', 'TermVariance', 'TradeOutPercentage', 'TradeOutAmount', 'ReportDate', 'JoinDate', 'MonthOf', 'Property', 'City', 'State', 'Status', 'Units', 'FullAddress', 'Latitude', 'Longitude', 'Region', 'ConstructionStatus', 'BirthOrder'];
 const UTRADE_KEYS = ['Property', 'UnitDetailsBuilding', 'UnitDetailsUnit', 'ReportDate'];
 export async function syncUnitByUnitTradeout(rows: Record<string, unknown>[], replace = true): Promise<number> {
+  const keyFn = (r: Record<string, unknown>) =>
+    [
+      str(getValWithOverrides(UTRADE_ALIAS, 'Property', r, 'Property Name', 'Location', 'PropertyName')),
+      str(getValWithOverrides(UTRADE_ALIAS, 'UnitDetailsBuilding', r, 'Unit Details | Building', 'Building', 'UnitDetails Building')),
+      str(getValWithOverrides(UTRADE_ALIAS, 'UnitDetailsUnit', r, 'Unit Details | Unit', 'Unit', 'Unit Number', 'Unit #')),
+      str(getValWithOverrides(UTRADE_ALIAS, 'ReportDate', r, 'Report Date', 'Report date')),
+    ].map((v) => String(v ?? '').trim()).join('\t');
+  rows = dedupeRowsByKey(rows, keyFn);
   const pool = await getConnection();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -454,6 +509,13 @@ const PUD_COLS = ['Property', 'UnitNumber', 'FloorPlan', 'UnitDesignation', 'SQF
 const PUD_KEYS = ['Property', 'UnitNumber', 'ReportDate'];
 const PUD_ALIAS = 'portfolioUnitDetails';
 export async function syncPortfolioUnitDetails(rows: Record<string, unknown>[], replace = true): Promise<number> {
+  const keyFn = (r: Record<string, unknown>) =>
+    [
+      str(getValWithOverrides(PUD_ALIAS, 'Property', r, 'Property Name', 'PropertyName', 'Community', 'Asset', 'Location')),
+      str(getValWithOverrides(PUD_ALIAS, 'UnitNumber', r, 'Unit Number', 'Unit #', 'Unit', 'Bldg Unit', 'Unit No', 'UnitText')),
+      str(getValWithOverrides(PUD_ALIAS, 'ReportDate', r, 'Report Date', 'Date', 'As Of Date')),
+    ].map((v) => String(v ?? '').trim()).join('\t');
+  rows = dedupeRowsByKey(rows, keyFn);
   const pool = await getConnection();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -504,6 +566,13 @@ const T_UNITS = `${LEASING_SCHEMA}.Units`;
 const UNITS_COLS = ['PropertyName', 'FloorPlan', 'UnitType', 'BldgUnit', 'SqFt', 'Features', 'Condition', 'Vacated', 'DateAvailable', 'BestPriceTerm', 'Monthlygrossrent', 'Concessions', 'MonthlyEffectiveRent', 'PreviousLeaseTerm', 'PreviousLeaseMonthlyEffectiveRent', 'GrossForecastedTradeout', 'ReportDate'];
 const UNITS_KEYS = ['PropertyName', 'BldgUnit', 'ReportDate'];
 export async function syncUnits(rows: Record<string, unknown>[], replace = true): Promise<number> {
+  const keyFn = (r: Record<string, unknown>) =>
+    [
+      str(getValWithOverrides(UNITS_ALIAS, 'PropertyName', r, 'Property', 'Property Name', 'Location')),
+      str(getValWithOverrides(UNITS_ALIAS, 'BldgUnit', r, 'Bldg - Unit', 'Bldg Unit', 'Unit', 'Unit #', 'Unit Number', 'Building Unit')),
+      str(getValWithOverrides(UNITS_ALIAS, 'ReportDate', r, 'Report Date', 'Report date')),
+    ].map((v) => String(v ?? '').trim()).join('\t');
+  rows = dedupeRowsByKey(rows, keyFn);
   const pool = await getConnection();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -541,6 +610,13 @@ const T_UNITMIX = `${LEASING_SCHEMA}.UnitMix`;
 const UNITMIX_COLS = ['PropertyName', 'UnitType', 'TotalUnits', 'SquareFeet', 'PercentOccupied', 'percentLeased', 'GrossOfferedRent30days', 'GrossInPlaceRent', 'GrossRecentExecutedRent60days', 'GrossOfferedRentPSF', 'GrossRecentExecutedRentPSF', 'ReportDate', 'FloorPlan'];
 const UNITMIX_KEYS = ['PropertyName', 'FloorPlan', 'ReportDate'];
 export async function syncUnitMix(rows: Record<string, unknown>[], replace = true): Promise<number> {
+  const keyFn = (r: Record<string, unknown>) =>
+    [
+      str(getValWithOverrides(UNITMIX_ALIAS, 'PropertyName', r, 'Property', 'Property Name', 'Location')),
+      str(getValWithOverrides(UNITMIX_ALIAS, 'FloorPlan', r, 'Floor Plan', 'FloorPlanName')),
+      str(getValWithOverrides(UNITMIX_ALIAS, 'ReportDate', r, 'Report Date', 'Report date')),
+    ].map((v) => String(v ?? '').trim()).join('\t');
+  rows = dedupeRowsByKey(rows, keyFn);
   const pool = await getConnection();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -574,6 +650,14 @@ const T_PRICING = `${LEASING_SCHEMA}.Pricing`;
 const PRICING_COLS = ['Property', 'FloorPlan', 'RateType', 'PostDate', 'EndDate', 'DaysLeft', 'CapacityActualUnits', 'CapacitySustainablePercentage', 'CapacitySustainableUnits', 'CurrentInPlaceLeases', 'CurrentInPlaceOcc', 'CurrentForecastLeases', 'CurrentForecastOcc', 'RecommendedForecastLeases', 'RecommendedForecastOcc', 'RecommendedForecastChg', 'YesterdayDate', 'YesterdayRent', 'YesterdayPercentage', 'AmenityNormModelRent', 'AmenityNormAmenAdj', 'RecommendationsRecommendedEffRent', 'RecommendationsRecommendedEffPercentage', 'RecommendationsChangeRent', 'RecommendationsChangeRev', 'RecommendationsRecentAvgEffRent', 'RecommendationsRecentAvgEffPercentage'];
 const PRICING_KEYS = ['Property', 'FloorPlan', 'RateType', 'PostDate'];
 export async function syncPricing(rows: Record<string, unknown>[], replace = true): Promise<number> {
+  const keyFn = (r: Record<string, unknown>) =>
+    [
+      str(getValWithOverrides(PRICING_ALIAS, 'Property', r)),
+      str(getValWithOverrides(PRICING_ALIAS, 'FloorPlan', r, 'Floor Plan')),
+      str(getValWithOverrides(PRICING_ALIAS, 'RateType', r, 'Rate Type')),
+      str(getValWithOverrides(PRICING_ALIAS, 'PostDate', r, 'Post Date')),
+    ].map((v) => String(v ?? '').trim()).join('\t');
+  rows = dedupeRowsByKey(rows, keyFn);
   const pool = await getConnection();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -621,6 +705,15 @@ const T_RECENTS = `${LEASING_SCHEMA}.RecentRents`;
 const RECENTS_COLS = ['Property', 'FloorPlan', 'ApplicationDate', 'EffectiveDate', 'LeaseStart', 'LeaseEnd', 'GrossRent', 'EffectiveRent', 'ReportDate'];
 const RECENTS_KEYS = ['Property', 'FloorPlan', 'ApplicationDate', 'LeaseStart', 'LeaseEnd'];
 export async function syncRecentRents(rows: Record<string, unknown>[], replace = true): Promise<number> {
+  const keyFn = (r: Record<string, unknown>) =>
+    [
+      str(getValWithOverrides(RECENTS_ALIAS, 'Property', r)),
+      str(getValWithOverrides(RECENTS_ALIAS, 'FloorPlan', r)),
+      str(getValWithOverrides(RECENTS_ALIAS, 'ApplicationDate', r)),
+      str(getValWithOverrides(RECENTS_ALIAS, 'LeaseStart', r)),
+      str(getValWithOverrides(RECENTS_ALIAS, 'LeaseEnd', r)),
+    ].map((v) => String(v ?? '').trim()).join('\t');
+  rows = dedupeRowsByKey(rows, keyFn);
   const pool = await getConnection();
   const tx = new sql.Transaction(pool);
   await tx.begin();
