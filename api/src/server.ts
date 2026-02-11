@@ -273,6 +273,7 @@ app.get('/api', (req: Request, res: Response) => {
         aggregates: 'GET /api/leasing/aggregates (?asOf=YYYY-MM-DD; leasingSummary, tradeoutSummary, pudSummary for million-row scaling)',
         dashboard: 'GET /api/leasing/dashboard (?asOf=YYYY-MM-DD; full pre-computed payload – all calculations on backend, frontend visual-only)',
         sync: 'POST /api/leasing/sync (body: leasing?, MMRData?, unitbyunittradeout?, portfolioUnitDetails?, units?, unitmix?, pricing?, recentrents?)',
+        syncCheck: 'GET /api/leasing/sync-check (optional X-Sync-Secret; returns { changes } from Domo metadata vs last sync – run before sync-from-domo in cron)',
         syncFromDomo: 'POST /api/leasing/sync-from-domo (optional X-Sync-Secret; backend fetches from Domo and syncs – for cron or Domo alert)',
       },
     },

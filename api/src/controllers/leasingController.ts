@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import {
   dataHash,
   canSync,
+  getSyncLog,
   upsertSyncLog,
   syncLeasing,
   syncMMRData,
@@ -126,6 +127,21 @@ async function fetchDomoDatasetCsv(datasetId: string, token: string): Promise<st
   });
   if (!res.ok) throw new Error(`Domo dataset ${datasetId}: ${res.status}`);
   return res.text();
+}
+
+/** Fetch Domo dataset metadata (lightweight). Returns row count if API provides it. */
+async function fetchDomoDatasetMetadata(
+  datasetId: string,
+  token: string
+): Promise<{ rowCount: number | null }> {
+  const res = await fetch(`https://api.domo.com/v1/datasets/${datasetId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return { rowCount: null };
+  const json = (await res.json()) as Record<string, unknown>;
+  const rowCount =
+    typeof json.rows === 'number' ? json.rows : typeof json.rowCount === 'number' ? json.rowCount : null;
+  return { rowCount };
 }
 
 /** Dashboard payload: pre-computed state so frontend does no heavy calculation. Maps are JSON-serialized as plain objects. */
@@ -261,6 +277,55 @@ export const postSync = async (req: Request, res: Response, next: NextFunction):
       errors: errors.length ? errors : undefined,
       _meta: { at: now.toISOString() },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/leasing/sync-check
+ * Lightweight check: compare Domo dataset metadata (row count) to last sync. For cron: if changes=false, exit;
+ * if changes=true, call POST /api/leasing/sync-from-domo. Optional: X-Sync-Secret if LEASING_SYNC_WEBHOOK_SECRET set.
+ */
+export const getSyncCheck = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const secret = process.env.LEASING_SYNC_WEBHOOK_SECRET?.trim();
+    if (secret) {
+      const provided = req.headers['x-sync-secret'] as string;
+      if (provided !== secret) {
+        res.status(401).json({ success: false, error: 'Invalid or missing sync secret' });
+        return;
+      }
+    }
+
+    const token = await getDomoToken();
+    const details: Array<{ dataset: string; domoRows: number | null; lastRows: number | null; hasChange: boolean }> = [];
+    let hasChange = false;
+
+    for (const [key, envKey] of Object.entries(DOMO_DATASET_KEYS)) {
+      const datasetId = process.env[envKey]?.trim();
+      if (!datasetId) continue;
+      const alias = key === 'recents' ? 'recentrents' : key;
+      const meta = await fetchDomoDatasetMetadata(datasetId, token);
+      const log = await getSyncLog(alias);
+      const lastRows = log?.LastRowCount ?? null;
+      const domoRows = meta.rowCount;
+      const changed =
+        log == null
+          ? true
+          : domoRows != null && lastRows != null
+            ? domoRows !== lastRows
+            : false;
+      if (changed) hasChange = true;
+      details.push({ dataset: alias, domoRows, lastRows, hasChange: changed });
+    }
+
+    if (details.length === 0) {
+      res.json({ changes: false, message: 'No DOMO_DATASET_* configured', details: [] });
+      return;
+    }
+
+    res.json({ changes: hasChange, details });
   } catch (error) {
     next(error);
   }

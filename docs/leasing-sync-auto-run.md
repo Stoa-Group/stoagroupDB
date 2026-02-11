@@ -2,6 +2,8 @@
 
 Sync can run automatically in two ways: **on a schedule** or **when Domo data is updated** (triggered by Domo).
 
+**Check-then-sync (recommended for cron):** To avoid pulling large data when nothing changed, use the **sync-check** endpoint first. Every 15 minutes: call `GET /api/leasing/sync-check`; if the response has `"changes": false`, exit immediately; if `"changes": true`, then call `POST /api/leasing/sync-from-domo` to update. The API compares Domo dataset metadata (row count) to the last sync; if they match, no full sync is needed.
+
 ---
 
 ## Option 1: Run on a schedule (recommended)
@@ -51,12 +53,31 @@ In the repo **Settings → Secrets and variables → Actions**, add:
 - `API_BASE_URL` = your API URL (e.g. `https://your-api.onrender.com`)
 - `LEASING_SYNC_WEBHOOK_SECRET` = same value as `LEASING_SYNC_WEBHOOK_SECRET` on the API (optional but recommended)
 
-### C. Local / server cron
+### C. Every 15 minutes: check then sync (RealPage / Domo data)
 
-From a machine that can reach your API:
+Use the **sync-check** endpoint so the job exits immediately when there are no changes; only when Domo data has changed does it run the full sync.
+
+**Script (recommended):** From the repo root, with `API_BASE_URL` and optionally `LEASING_SYNC_WEBHOOK_SECRET` in `.env` or the environment:
+
+```bash
+chmod +x scripts/cron-leasing-sync.sh
+./scripts/cron-leasing-sync.sh
+```
+
+**Crontab (every 15 min):**
 
 ```bash
 # crontab -e
+*/15 * * * * /path/to/stoagroupDB/scripts/cron-leasing-sync.sh
+```
+
+The script calls `GET /api/leasing/sync-check` first; if the response does not contain `"changes": true`, it exits without calling the sync. If changes are detected (Domo row count differs from last sync, or a dataset has never been synced), it then calls `POST /api/leasing/sync-from-domo` to update the backend.
+
+**Note:** Sync-check uses Domo’s dataset metadata (GET /v1/datasets/{id}) to compare row count to the last sync. If your Domo API does not return a row count in metadata, the check may always report no changes after the first sync. In that case, run `POST /api/leasing/sync-from-domo` on a schedule instead; the backend still skips writing when the data hash is unchanged.
+
+**Alternative: call sync every time (no check):**
+
+```bash
 0 * * * * curl -sS -X POST "https://YOUR_API_URL/api/leasing/sync-from-domo" -H "X-Sync-Secret: YOUR_SECRET"
 ```
 

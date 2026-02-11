@@ -15,6 +15,8 @@ router.get('/dashboard', leasingController.getDashboard);
 // Sync: accept Domo dataset payloads; store once per day per dataset, or when data hash changes.
 router.post('/sync', leasingController.postSync);
 
+// Sync check: lightweight compare Domo metadata to last sync. For cron: if changes=false exit; else call sync-from-domo.
+router.get('/sync-check', leasingController.getSyncCheck);
 // Sync from Domo: backend fetches datasets from Domo API and syncs. For Domo alerts or cron. Optional header X-Sync-Secret.
 router.post('/sync-from-domo', leasingController.postSyncFromDomo);
 
