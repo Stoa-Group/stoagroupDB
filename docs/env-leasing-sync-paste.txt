@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# Paste into .env (local) or Render → Environment (one KEY=VALUE per line).
+# Replace placeholders: YOUR_RENDER_URL, your-db-server.database.windows.net, etc.
+# ---------------------------------------------------------------------------
+
+# ----- Backend API (required for stoagroupDB API on Render) -----
+PORT=3000
+CORS_ORIGINS=https://your-domo-app.domo.com,https://your-custom-domain.com
+DB_SERVER=your-db-server.database.windows.net
+DB_DATABASE=your-database-name
+DB_USER=your-db-user
+DB_PASSWORD=your-db-password
+DB_ENCRYPT=true
+DB_TRUST_SERVER_CERTIFICATE=false
+LEASING_AGGREGATION_SOURCE=api
+
+# ----- Domo → Backend sync (for Python script domo-to-backend-sync.py; optional on Render unless you run the sync there) -----
+DOMO_CLIENT_ID=8a7ba02d-e2c7-4a87-bfd5-160f8e6c2254
+DOMO_CLIENT_SECRET=0eded7377162e820000deb21efbb22f86a0d73d07e5014b6c4457621bed43430
+API_BASE_URL=https://YOUR_RENDER_URL.onrender.com
+
+DOMO_DATASET_LEASING=46b4fe7a-e11b-4af8-becc-2a3fee926c7b
+DOMO_DATASET_MMR=b71abe2e-4484-434d-af06-e708ba57f768
+DOMO_DATASET_TRADEOUT=0af2c786-8ec5-4075-aeb0-c693b88c9703
+DOMO_DATASET_PUD=e5ba3142-4d67-4698-9df4-716f3c90e49b
+DOMO_DATASET_UNITS=e9424918-5747-42fc-b227-c63d87405e9e
+DOMO_DATASET_UNITMIX=99792dc0-417c-43ea-aa29-7a0818ec2484
+DOMO_DATASET_PRICING=a21244db-b0c4-4f7d-8ab9-d0a04d64d741
+DOMO_DATASET_RECENTRENTS=
+LEASING_SYNC_WEBHOOK_SECRET=
+
+
+# ========== RENDER BULK PASTE (copy the block below; no # lines) ==========
+# Replace YOUR_RENDER_URL and DB placeholders before pasting into Render → Environment → Bulk Edit.
+
+PORT=3000
+CORS_ORIGINS=https://your-domo-app.domo.com
+DB_SERVER=your-db-server.database.windows.net
+DB_DATABASE=your-database-name
+DB_USER=your-db-user
+DB_PASSWORD=your-db-password
+DB_ENCRYPT=true
+DB_TRUST_SERVER_CERTIFICATE=false
+LEASING_AGGREGATION_SOURCE=api
+DOMO_CLIENT_ID=8a7ba02d-e2c7-4a87-bfd5-160f8e6c2254
+DOMO_CLIENT_SECRET=0eded7377162e820000deb21efbb22f86a0d73d07e5014b6c4457621bed43430
+API_BASE_URL=https://YOUR_RENDER_URL.onrender.com
+DOMO_DATASET_LEASING=46b4fe7a-e11b-4af8-becc-2a3fee926c7b
+DOMO_DATASET_MMR=b71abe2e-4484-434d-af06-e708ba57f768
+DOMO_DATASET_TRADEOUT=0af2c786-8ec5-4075-aeb0-c693b88c9703
+DOMO_DATASET_PUD=e5ba3142-4d67-4698-9df4-716f3c90e49b
+DOMO_DATASET_UNITS=e9424918-5747-42fc-b227-c63d87405e9e
+DOMO_DATASET_UNITMIX=99792dc0-417c-43ea-aa29-7a0818ec2484
+DOMO_DATASET_PRICING=a21244db-b0c4-4f7d-8ab9-d0a04d64d741
+DOMO_DATASET_RECENTRENTS=
+LEASING_SYNC_WEBHOOK_SECRET=

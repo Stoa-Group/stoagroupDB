@@ -55,6 +55,79 @@ const SYNC_MAP: Record<string, (rows: Record<string, unknown>[]) => Promise<numb
   recentrents: syncRecentRents,
 };
 
+const DOMO_DATASET_KEYS: Record<string, string> = {
+  leasing: 'DOMO_DATASET_LEASING',
+  MMRData: 'DOMO_DATASET_MMR',
+  unitbyunittradeout: 'DOMO_DATASET_TRADEOUT',
+  portfolioUnitDetails: 'DOMO_DATASET_PUD',
+  units: 'DOMO_DATASET_UNITS',
+  unitmix: 'DOMO_DATASET_UNITMIX',
+  pricing: 'DOMO_DATASET_PRICING',
+  recentrents: 'DOMO_DATASET_RECENTRENTS',
+};
+
+function parseCsvToRows(csvText: string): Record<string, unknown>[] {
+  const lines = csvText.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length === 0) return [];
+  const header = lines[0];
+  const headers = parseCsvLine(header);
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCsvLine(lines[i]);
+    const row: Record<string, unknown> = {};
+    headers.forEach((h, j) => { row[h] = values[j] ?? ''; });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQuotes = !inQuotes;
+    } else if (c === ',' && !inQuotes) {
+      out.push(cur.trim());
+      cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+async function getDomoToken(): Promise<string> {
+  const clientId = process.env.DOMO_CLIENT_ID?.trim();
+  const clientSecret = process.env.DOMO_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) throw new Error('DOMO_CLIENT_ID and DOMO_CLIENT_SECRET must be set');
+  const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const authRes = await fetch('https://api.domo.com/oauth/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${auth}`,
+    },
+    body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
+  });
+  if (!authRes.ok) throw new Error(`Domo token failed: ${authRes.status}`);
+  const json = (await authRes.json()) as { access_token?: string };
+  if (!json.access_token) throw new Error('Domo token response missing access_token');
+  return json.access_token;
+}
+
+async function fetchDomoDatasetCsv(datasetId: string, token: string): Promise<string> {
+  const url = `https://api.domo.com/v1/datasets/${datasetId}/data?includeHeader=true&format=csv`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Domo dataset ${datasetId}: ${res.status}`);
+  return res.text();
+}
+
 /** Dashboard payload: pre-computed state so frontend does no heavy calculation. Maps are JSON-serialized as plain objects. */
 export interface LeasingDashboardPayload {
   rows?: Array<Record<string, unknown>>;
@@ -183,6 +256,90 @@ export const postSync = async (req: Request, res: Response, next: NextFunction):
 
     res.status(errors.length ? 207 : 200).json({
       success: errors.length === 0,
+      synced,
+      skipped,
+      errors: errors.length ? errors : undefined,
+      _meta: { at: now.toISOString() },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/leasing/sync-from-domo
+ * Fetches all configured leasing datasets from Domo API and runs sync. Call from Domo (alert/webhook)
+ * or a scheduler. Optional: set LEASING_SYNC_WEBHOOK_SECRET and send X-Sync-Secret header to protect.
+ */
+export const postSyncFromDomo = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const secret = process.env.LEASING_SYNC_WEBHOOK_SECRET?.trim();
+    if (secret) {
+      const provided = (req.headers['x-sync-secret'] as string) || (req.body && typeof req.body === 'object' && (req.body as { secret?: string }).secret);
+      if (provided !== secret) {
+        res.status(401).json({ success: false, error: 'Invalid or missing sync secret' });
+        return;
+      }
+    }
+
+    const token = await getDomoToken();
+    const body: Record<string, unknown[]> = {};
+    const fetched: string[] = [];
+    const errors: Array<{ dataset: string; message: string }> = [];
+
+    for (const [key, envKey] of Object.entries(DOMO_DATASET_KEYS)) {
+      const datasetId = process.env[envKey]?.trim();
+      if (!datasetId) continue;
+      try {
+        const csvText = await fetchDomoDatasetCsv(datasetId, token);
+        const rows = parseCsvToRows(csvText);
+        body[key] = rows;
+        fetched.push(`${key}:${rows.length}`);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        errors.push({ dataset: key, message });
+      }
+    }
+
+    if (Object.keys(body).length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'No datasets configured. Set at least one DOMO_DATASET_* env var.',
+        fetched: [],
+        errors,
+      });
+      return;
+    }
+
+    const synced: string[] = [];
+    const skipped: string[] = [];
+    const now = new Date();
+    const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z');
+
+    for (const [key, rows] of Object.entries(body)) {
+      const alias = key === 'recents' ? 'recentrents' : key;
+      if (!SYNC_MAP[alias] || !Array.isArray(rows)) continue;
+      const count = rows.length;
+      const hash = dataHash(rows as unknown[]);
+      try {
+        const allowed = await canSync(alias, hash);
+        if (!allowed) {
+          skipped.push(alias);
+          continue;
+        }
+        const syncFn = SYNC_MAP[alias];
+        await syncFn(rows as Record<string, unknown>[]);
+        await upsertSyncLog(alias, now, today, hash, count);
+        synced.push(alias);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        errors.push({ dataset: alias, message });
+      }
+    }
+
+    res.status(errors.length ? 207 : 200).json({
+      success: errors.length === 0,
+      fetched,
       synced,
       skipped,
       errors: errors.length ? errors : undefined,

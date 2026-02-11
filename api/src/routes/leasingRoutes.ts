@@ -15,6 +15,9 @@ router.get('/dashboard', leasingController.getDashboard);
 // Sync: accept Domo dataset payloads; store once per day per dataset, or when data hash changes.
 router.post('/sync', leasingController.postSync);
 
+// Sync from Domo: backend fetches datasets from Domo API and syncs. For Domo alerts or cron. Optional header X-Sync-Secret.
+router.post('/sync-from-domo', leasingController.postSyncFromDomo);
+
 // CRUD: list all rows for a dataset
 router.get('/datasets/:dataset', leasingController.listDataset);
 // Get one row by id

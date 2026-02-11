@@ -29,8 +29,9 @@ app.use(cors({
   origin: process.env.CORS_ORIGINS?.split(',') || '*',
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Large limit for leasing sync (e.g. 200k+ PUD rows); default 100kb would reject
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || '100mb' }));
 
 // Health check
 app.get('/health', async (req: Request, res: Response) => {
@@ -271,6 +272,8 @@ app.get('/api', (req: Request, res: Response) => {
         aggregatesAvailable: 'GET /api/leasing/aggregates/available (pre-aggregated data available?)',
         aggregates: 'GET /api/leasing/aggregates (?asOf=YYYY-MM-DD; leasingSummary, tradeoutSummary, pudSummary for million-row scaling)',
         dashboard: 'GET /api/leasing/dashboard (?asOf=YYYY-MM-DD; full pre-computed payload – all calculations on backend, frontend visual-only)',
+        sync: 'POST /api/leasing/sync (body: leasing?, MMRData?, unitbyunittradeout?, portfolioUnitDetails?, units?, unitmix?, pricing?, recentrents?)',
+        syncFromDomo: 'POST /api/leasing/sync-from-domo (optional X-Sync-Secret; backend fetches from Domo and syncs – for cron or Domo alert)',
       },
     },
   });
