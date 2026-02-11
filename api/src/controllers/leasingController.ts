@@ -257,7 +257,7 @@ export const getAggregates = async (req: Request, res: Response, next: NextFunct
 
 /**
  * POST /api/leasing/sync
- * Accepts Domo dataset payloads; stores in DB once per day per dataset, or when data hash changes.
+ * Accepts Domo dataset payloads; upserts into DB (never wipes). Same shape as sync-from-domo response.
  * Body: { leasing?: [], MMRData?: [], unitbyunittradeout?: [], portfolioUnitDetails?: [], units?: [], unitmix?: [], pricing?: [], recentrents?: [] }
  */
 export const postSync = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -268,7 +268,7 @@ export const postSync = async (req: Request, res: Response, next: NextFunction):
     const totalRowsHeader = req.headers['x-leasing-sync-total-rows'] as string;
     const dataHashHeader = req.headers['x-leasing-sync-data-hash'] as string;
     const isChunked = req.headers['x-leasing-sync-first-chunk'] !== undefined;
-    const replace = !isChunked || firstChunk;
+    const replace = false; // never wipe: always upsert so existing DB data is preserved after sync
 
     const synced: string[] = [];
     const skipped: string[] = [];

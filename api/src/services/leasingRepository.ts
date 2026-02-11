@@ -1,5 +1,5 @@
 /**
- * Leasing repository: sync (truncate + bulk insert), CRUD, and read-for-dashboard.
+ * Leasing repository: sync (upsert only; no auto-wipe), CRUD, and read-for-dashboard.
  * All tables live in schema [leasing].
  * Runtime alias overrides: api/src/config/domo-alias-overrides.json (table -> column -> string[]) for Domo CSV header names.
  */
