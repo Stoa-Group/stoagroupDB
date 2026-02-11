@@ -398,6 +398,7 @@ export const postSyncFromDomo = async (req: Request, res: Response, next: NextFu
     const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z');
     const fetched: string[] = [];
 
+    const forceSync = String(req.query.force || '').toLowerCase() === 'true';
     let entries = Object.entries(DOMO_DATASET_KEYS);
     const onlyDataset = (req.query.dataset as string)?.trim();
     if (onlyDataset) {
@@ -429,16 +430,18 @@ export const postSyncFromDomo = async (req: Request, res: Response, next: NextFu
 
       const count = rows.length;
       const hash = dataHash(rows as unknown[]);
-      try {
-        const allowed = await canSync(alias, hash);
-        if (!allowed) {
-          skipped.push(alias);
+      if (!forceSync) {
+        try {
+          const allowed = await canSync(alias, hash);
+          if (!allowed) {
+            skipped.push(alias);
+            continue;
+          }
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          errors.push({ dataset: alias, message });
           continue;
         }
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        errors.push({ dataset: alias, message });
-        continue;
       }
 
       const syncFn = SYNC_MAP[alias];
@@ -483,7 +486,7 @@ export const postSyncFromDomo = async (req: Request, res: Response, next: NextFu
       synced,
       skipped,
       errors: errors.length ? errors : undefined,
-      _meta: { at: now.toISOString(), chunkSize: SYNC_CHUNK_SIZE, restMs: SYNC_REST_MS },
+      _meta: { at: now.toISOString(), chunkSize: SYNC_CHUNK_SIZE, restMs: SYNC_REST_MS, force: forceSync },
     });
   } catch (error) {
     next(error);
