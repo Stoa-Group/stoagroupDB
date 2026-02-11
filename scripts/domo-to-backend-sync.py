@@ -171,15 +171,32 @@ def build_payload_from_local(local_paths: dict[str, str]) -> dict[str, list]:
 
 
 def post_sync(base_url: str, payload: dict[str, list]) -> dict[str, Any]:
-    """POST to backend /api/leasing/sync."""
+    """POST to backend /api/leasing/sync. Sends one dataset per request to avoid 413 (entity too large)."""
     url = f"{base_url.rstrip('/')}/api/leasing/sync"
-    r = requests.post(
-        url,
-        json=payload,
-        headers={"Content-Type": "application/json"},
-        timeout=600,
-    )
-    return r.json()
+    all_synced = []
+    all_skipped = []
+    all_errors = []
+    for key, rows in payload.items():
+        try:
+            r = requests.post(
+                url,
+                json={key: rows},
+                headers={"Content-Type": "application/json"},
+                timeout=600,
+            )
+            data = r.json()
+            all_synced.extend(data.get("synced", []))
+            all_skipped.extend(data.get("skipped", []))
+            if data.get("errors"):
+                all_errors.extend(data.get("errors", []))
+        except Exception as e:
+            all_errors.append({"dataset": key, "message": str(e)})
+    return {
+        "success": len(all_errors) == 0,
+        "synced": all_synced,
+        "skipped": all_skipped,
+        "errors": all_errors if all_errors else None,
+    }
 
 
 def main() -> int:

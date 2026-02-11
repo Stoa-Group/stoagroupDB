@@ -30,8 +30,8 @@ app.use(cors({
   credentials: true,
 }));
 // Large limit for leasing sync (e.g. 200k+ PUD rows); default 100kb would reject
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || '100mb' }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '300mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || '300mb' }));
 
 // Health check
 app.get('/health', async (req: Request, res: Response) => {
