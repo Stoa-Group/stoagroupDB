@@ -144,7 +144,7 @@ function buildUnitMixStructure(rows: Record<string, unknown>[]): Record<string, 
   const latestPlan = new Map<string, { units: number | null; d: Date }>();
   for (const r of rows || []) {
     const row = r as Record<string, unknown>;
-    const prop = normProp(row[propertyName]);
+    const prop = normProp(row[propertyName] ?? row['Property'] ?? '');
     const ut = (row[unitType] ?? '').toString().trim();
     const plan = normPlan(row[floorPlan]);
     const d = parseDate(row[reportDate]);
