@@ -21,7 +21,7 @@ import { ensureContainerExists } from './config/azureBlob';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Middleware
 app.use(helmet());
@@ -280,22 +280,16 @@ app.get('/api', (req: Request, res: Response) => {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start server (ensure Azure Blob container exists when blob storage is configured)
-ensureContainerExists()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📚 API Documentation: http://localhost:${PORT}/api`);
-      console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
-    });
-  })
-  .catch(() => {
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📚 API Documentation: http://localhost:${PORT}/api`);
-      console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
-    });
-  });
+// Start server immediately so Render (and other platforms) detect an open port.
+// Azure Blob container setup runs in background and does not block listening.
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📚 API Documentation: http://localhost:${PORT}/api`);
+  console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
+});
+ensureContainerExists().catch((err) => {
+  console.warn('Azure Blob container check failed (blob features may be limited):', err?.message ?? err);
+});
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
