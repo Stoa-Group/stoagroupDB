@@ -877,17 +877,38 @@ export async function upsertDashboardSnapshot(payloadJson: string): Promise<void
   const pool = await getConnection();
   const now = new Date();
   const stored = compressSnapshotPayload(payloadJson);
-  await pool
+  // Remove any stray row with NULL Id (leftover from bad MERGE or manual insert)
+  await pool.request().query(`DELETE FROM ${T_SNAPSHOT} WHERE Id IS NULL;`);
+
+  const req = pool
     .request()
     .input('id', sql.Int, SNAPSHOT_ID)
-    .input('payload', sql.NVarChar(2147483647), stored)
-    .input('builtAt', sql.DateTime2, now)
-    .query(`
-      MERGE ${T_SNAPSHOT} AS t
-      USING (SELECT @id AS Id) AS s ON t.Id = s.Id
-      WHEN MATCHED THEN UPDATE SET Payload = @payload, BuiltAt = @builtAt
-      WHEN NOT MATCHED THEN INSERT (Id, Payload, BuiltAt) VALUES (@id, @payload, @builtAt);
-    `);
+    .input('payload', sql.NVarChar(sql.MAX), stored)
+    .input('builtAt', sql.DateTime2, now);
+
+  // UPDATE first; if no row exists, INSERT. Avoids MERGE parameter-binding quirks on some drivers.
+  const updateResult = await req.query(`
+    UPDATE ${T_SNAPSHOT} SET Payload = @payload, BuiltAt = @builtAt WHERE Id = @id;
+  `);
+  const rowsUpdated = (updateResult as { rowsAffected?: number[] }).rowsAffected?.[0] ?? 0;
+  if (rowsUpdated === 0) {
+    await pool
+      .request()
+      .input('id', sql.Int, SNAPSHOT_ID)
+      .input('payload', sql.NVarChar(sql.MAX), stored)
+      .input('builtAt', sql.DateTime2, now)
+      .query(`INSERT INTO ${T_SNAPSHOT} (Id, Payload, BuiltAt) VALUES (@id, @payload, @builtAt);`);
+  }
+
+  // Verify the row was written (same DB the API uses)
+  const check = await pool
+    .request()
+    .input('id', sql.Int, SNAPSHOT_ID)
+    .query(`SELECT Id, CASE WHEN Payload IS NULL THEN 0 ELSE 1 END AS HasPayload, BuiltAt FROM ${T_SNAPSHOT} WHERE Id = @id`);
+  const row = check.recordset[0];
+  if (!row || !(row as { HasPayload?: number }).HasPayload) {
+    console.warn('[leasing] DashboardSnapshot verify: row missing or Payload NULL after upsert. Check that the API .env points to the same DB you query in SSMS.');
+  }
 }
 
 // ---------- CRUD: get by id ----------

@@ -5,10 +5,11 @@
 The dashboard snapshot is stored in the database so the UI can load instantly instead of rebuilding from raw data every time.
 
 - **Table:** `leasing.DashboardSnapshot`
-- **Columns:**
-  - `Id` (int, PK) — single row (e.g. 1)
-  - `Payload` (nvarchar(max)) — JSON; new rows use gzip+base64 with `gz:` prefix
-  - `BuiltAt` (datetime2) — when the snapshot was built
+- **Columns (must match exactly for writes to succeed):**
+  - `Id` (int, NOT NULL, PK) — single row, use value `1`
+  - `Payload` (nvarchar(max), NULL) — JSON; app stores gzip+base64 with `gz:` prefix
+  - `BuiltAt` (datetime2, NOT NULL) — when the snapshot was built
+- If you see a row with all NULLs in SSMS, the API may be using a different database (check `api/.env` connection string), or the table may have been created with different column types. The app uses UPDATE-then-INSERT and verifies the row after write; check API logs for `[leasing] DashboardSnapshot verify: row missing or Payload NULL`.
 - **Written by:**
   - `getDashboard` when it builds from raw (then upserts snapshot before returning)
   - `rebuildDashboardSnapshot()` — called from POST `/api/leasing/rebuild-snapshot`, after sync, and on server startup
