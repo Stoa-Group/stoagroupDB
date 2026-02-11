@@ -612,8 +612,8 @@ export const postSyncAddAlias = async (req: Request, res: Response, next: NextFu
   }
 };
 
-/** Rebuild and store the dashboard snapshot (called after sync; fire-and-forget). */
-async function rebuildDashboardSnapshot(): Promise<void> {
+/** Rebuild and store the dashboard snapshot (called after sync and on startup; fire-and-forget). */
+export async function rebuildDashboardSnapshot(): Promise<void> {
   try {
     const raw = await getAllForDashboard();
     const dashboard = await buildDashboardFromRaw(raw);
@@ -648,10 +648,29 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
 
     const raw = await getAllForDashboard();
     const dashboard = await buildDashboardFromRaw(raw);
+    const safe = dashboardPayloadToJsonSafe(dashboard);
+    await upsertDashboardSnapshot(JSON.stringify(safe));
     res.json({
       success: true,
-      dashboard: dashboardPayloadToJsonSafe(dashboard),
+      dashboard: safe,
       _meta: { source: AGGREGATION_SOURCE, asOf },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/leasing/rebuild-snapshot
+ * Force rebuild and store the dashboard snapshot. Next GET /dashboard will be instant.
+ */
+export const postRebuildSnapshot = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    await rebuildDashboardSnapshot();
+    const snapshot = await getDashboardSnapshot();
+    res.json({
+      success: true,
+      builtAt: snapshot?.builtAt?.toISOString?.() ?? new Date().toISOString(),
     });
   } catch (error) {
     next(error);

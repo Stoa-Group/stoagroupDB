@@ -19,6 +19,7 @@ import leasingRoutes from './routes/leasingRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { getConnection } from './config/database';
 import { ensureContainerExists } from './config/azureBlob';
+import { rebuildDashboardSnapshot } from './controllers/leasingController';
 import path from 'path';
 
 // Load .env from repo root then api/ (when running from api/dist, __dirname is api/dist)
@@ -306,6 +307,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📚 API Documentation: http://localhost:${PORT}/api`);
   console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
+  getConnection()
+    .then(() => {
+      rebuildDashboardSnapshot().then(() => console.log('[leasing] Dashboard snapshot ready')).catch((err) => console.warn('[leasing] Startup snapshot rebuild:', err?.message ?? err));
+    })
+    .catch(() => {});
 });
 server.timeout = Number(process.env.SERVER_REQUEST_TIMEOUT_MS) || 600_000; // 10 min default so sync-from-domo (e.g. PUD) can finish; set env for longer
 ensureContainerExists().catch((err) => {

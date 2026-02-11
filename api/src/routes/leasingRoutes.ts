@@ -11,6 +11,8 @@ router.get('/aggregates', leasingController.getAggregates);
 
 // Single dashboard payload: all calculations done on backend; frontend is visual-only.
 router.get('/dashboard', leasingController.getDashboard);
+// Force rebuild and store dashboard snapshot (so next GET /dashboard is instant).
+router.post('/rebuild-snapshot', leasingController.postRebuildSnapshot);
 
 // Sync: accept Domo dataset payloads; store once per day per dataset, or when data hash changes.
 router.post('/sync', leasingController.postSync);
