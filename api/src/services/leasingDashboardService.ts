@@ -4,7 +4,11 @@
  */
 import type { LeasingDashboardPayload } from '../controllers/leasingController';
 import type { LeasingDashboardRaw } from './leasingRepository';
-import { buildKpis, type PortfolioKpis } from './leasingKpiService';
+import { buildKpis, type PortfolioKpis, type PropertyKpis } from './leasingKpiService';
+import {
+  loadPerformanceOverviewCsv,
+  type PerformanceOverviewRow,
+} from './performanceOverviewCsv';
 
 function parseDate(v: unknown): Date | null {
   if (v == null || v === '') return null;
@@ -806,6 +810,47 @@ function buildProjections4And7Weeks(
   };
 }
 
+/**
+ * If Performance_Overview_Properties.csv is present, override KPIs for matching properties
+ * so dashboard occupancies, budgeted occupancies, and leased % match the CSV.
+ * Used by buildDashboardFromRaw and by leasing controller resolveKpis.
+ */
+export function applyPerformanceOverviewOverrides(kpis: PortfolioKpis): PortfolioKpis {
+  const csvMap = loadPerformanceOverviewCsv();
+  if (!csvMap || csvMap.size === 0) return kpis;
+  const byProperty: Record<string, PropertyKpis> = {};
+  for (const [displayKey, data] of Object.entries(kpis.byProperty)) {
+    const keyNorm = (displayKey ?? '').toString().trim().replace(/\*/g, '').toLowerCase();
+    const row: PerformanceOverviewRow | undefined = csvMap.get(keyNorm);
+    if (!row) {
+      byProperty[displayKey] = data;
+      continue;
+    }
+    const units = row.units ?? data.totalUnits;
+    const actualOccPct = row.actualOccPct ?? data.occupancyPct;
+    const budgetedOccPct = row.budgetedOccPct ?? data.budgetedOccupancyPct;
+    const leasedPct = row.leasedPct ?? (data.totalUnits > 0 ? (data.leased / data.totalUnits) * 100 : null);
+    const occupied = actualOccPct != null && units != null ? Math.round((actualOccPct / 100) * units) : data.occupied;
+    const leased = leasedPct != null && units != null ? Math.round((leasedPct / 100) * units) : data.leased;
+    const budgetedUnits =
+      budgetedOccPct != null && units != null ? Math.round((budgetedOccPct / 100) * units) : data.budgetedOccupancyUnits;
+    const deltaToBudget =
+      occupied != null && budgetedUnits != null ? occupied - budgetedUnits : data.deltaToBudget;
+    byProperty[displayKey] = {
+      ...data,
+      totalUnits: units ?? data.totalUnits,
+      occupancyPct: actualOccPct ?? data.occupancyPct,
+      budgetedOccupancyPct: budgetedOccPct ?? data.budgetedOccupancyPct,
+      budgetedOccupancyUnits: budgetedUnits ?? data.budgetedOccupancyUnits,
+      occupied,
+      leased,
+      available: (units ?? data.totalUnits) - leased,
+      deltaToBudget,
+    };
+  }
+  return { ...kpis, byProperty };
+}
+
 /** Return a JSON-serializable copy of the dashboard payload (for storing in DashboardSnapshot). */
 export function dashboardPayloadToJsonSafe(payload: LeasingDashboardPayload): Record<string, unknown> {
   return toSerializable(payload) as Record<string, unknown>;
@@ -860,7 +905,8 @@ export async function buildDashboardFromRaw(
   addDisplayNameKeysToPayloadMaps(rows, unitmixStruct, utradeIndex, leasingTS);
 
   // Velocity all-time avg (7d and 28d) per property from leasingTS; merge into kpis.byProperty
-  const kpisWithVelocityAvg = addVelocityAllTimeAvgToKpis(kpis, leasingTS);
+  let kpisWithVelocityAvg = addVelocityAllTimeAvgToKpis(kpis, leasingTS);
+  kpisWithVelocityAvg = applyPerformanceOverviewOverrides(kpisWithVelocityAvg);
 
   // Portfolio breakdown arrays (use display names from rows for property field)
   const propDisplayByNorm = displayNamesByNormalizedKey(rows);

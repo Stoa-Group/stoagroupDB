@@ -41,7 +41,7 @@ import {
   addDomoAliasOverride,
   DATASET_ALIASES,
 } from '../services/leasingRepository';
-import { buildDashboardFromRaw, dashboardPayloadToJsonSafe, getMmrBudgetByProperty } from '../services/leasingDashboardService';
+import { applyPerformanceOverviewOverrides, buildDashboardFromRaw, dashboardPayloadToJsonSafe, getMmrBudgetByProperty } from '../services/leasingDashboardService';
 import { buildKpis, type PortfolioKpis } from '../services/leasingKpiService';
 import { getConnection } from '../config/database';
 
@@ -788,14 +788,30 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
     console.log('[leasing/dashboard] snapshot fetch', Date.now() - t0, 'ms', snapshot?.payload ? 'hit' : 'miss');
     if (snapshot?.payload) {
       const payload = snapshot.payload;
+      let dashboard: LeasingDashboardPayload;
+      let rawInPayload: unknown;
       if (payload.startsWith('{"success":')) {
-        res.setHeader('Content-Type', 'application/json');
-        res.end(payload);
+        const parsed = JSON.parse(payload) as { success: boolean; dashboard?: LeasingDashboardPayload; raw?: unknown; _meta?: unknown };
+        dashboard = parsed.dashboard ?? (parsed as unknown as LeasingDashboardPayload);
+        rawInPayload = (parsed as { raw?: unknown }).raw;
       } else {
-        const dashboard = JSON.parse(payload) as LeasingDashboardPayload;
-        if (!Array.isArray(dashboard.hubPropertyNames) || dashboard.hubPropertyNames.length === 0) {
-          dashboard.hubPropertyNames = await getLeaseUpStabilizedProjectNames();
-        }
+        dashboard = JSON.parse(payload) as LeasingDashboardPayload;
+      }
+      if (!Array.isArray(dashboard.hubPropertyNames) || dashboard.hubPropertyNames.length === 0) {
+        dashboard.hubPropertyNames = await getLeaseUpStabilizedProjectNames();
+      }
+      if (dashboard.kpis && typeof dashboard.kpis === 'object' && dashboard.kpis.byProperty) {
+        const overridden = applyPerformanceOverviewOverrides(dashboard.kpis as unknown as PortfolioKpis);
+        dashboard.kpis = overridden as unknown as LeasingDashboardPayload['kpis'];
+      }
+      if (payload.startsWith('{"success":') && rawInPayload !== undefined) {
+        res.json({
+          success: true,
+          raw: rawInPayload,
+          dashboard,
+          _meta: { source: AGGREGATION_SOURCE, asOf, fromSnapshot: true, builtAt: snapshot.builtAt?.toISOString?.() },
+        });
+      } else {
         res.json({
           success: true,
           dashboard,
@@ -878,30 +894,28 @@ async function resolveKpis(asOf?: string, property?: string): Promise<{ kpis: Po
       const parsed = JSON.parse(snapshot.payload) as { dashboard?: { kpis?: PortfolioKpis } };
       const kpis = parsed.dashboard?.kpis;
       if (kpis && typeof kpis === 'object') {
-        if (property && kpis.byProperty) {
+        let out = kpis as PortfolioKpis;
+        if (property && out.byProperty) {
           const pNorm = property.trim().toUpperCase().replace(/\*/g, '');
-          const match = Object.entries(kpis.byProperty).find(([k]) => k.toUpperCase().replace(/\*/g, '') === pNorm);
+          const match = Object.entries(out.byProperty).find(([k]) => k.toUpperCase().replace(/\*/g, '') === pNorm);
           if (match) {
             const [, propKpis] = match;
-            return {
-              kpis: {
-                ...kpis,
-                properties: 1,
-                totalUnits: propKpis.totalUnits,
-                occupied: propKpis.occupied,
-                leased: propKpis.leased,
-                available: propKpis.available,
-                occupancyPct: propKpis.occupancyPct,
-                leases7d: propKpis.leases7d,
-                leases28d: propKpis.leases28d,
-                deltaToBudget: propKpis.deltaToBudget,
-                byProperty: { [match[0]]: propKpis },
-              },
-              fromSnapshot: true,
+            out = {
+              ...out,
+              properties: 1,
+              totalUnits: propKpis.totalUnits,
+              occupied: propKpis.occupied,
+              leased: propKpis.leased,
+              available: propKpis.available,
+              occupancyPct: propKpis.occupancyPct,
+              leases7d: propKpis.leases7d,
+              leases28d: propKpis.leases28d,
+              deltaToBudget: propKpis.deltaToBudget,
+              byProperty: { [match[0]]: propKpis },
             };
           }
         }
-        return { kpis: kpis as PortfolioKpis, fromSnapshot: true };
+        return { kpis: applyPerformanceOverviewOverrides(out), fromSnapshot: true };
       }
     } catch {
       /* fall through to build from raw */
@@ -909,7 +923,7 @@ async function resolveKpis(asOf?: string, property?: string): Promise<{ kpis: Po
   }
   const raw = await getAllForDashboard();
   const { mmrBudgetedOcc, mmrBudgetedOccPct } = getMmrBudgetByProperty(raw);
-  const kpis = buildKpis(raw, { asOf, property, mmrBudgetedOcc, mmrBudgetedOccPct });
+  const kpis = applyPerformanceOverviewOverrides(buildKpis(raw, { asOf, property, mmrBudgetedOcc, mmrBudgetedOccPct }));
   return { kpis, fromSnapshot: false };
 }
 
