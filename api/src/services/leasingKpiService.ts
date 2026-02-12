@@ -27,6 +27,11 @@ function normProp(s: unknown): string {
   return (s ?? '').toString().trim();
 }
 
+/** Canonical key for merging property names that differ only by case/spacing (e.g. "The Waters at Millerville" vs "THE WATERS AT MILLERVILLE"). */
+function normPropCanonical(s: unknown): string {
+  return (s ?? '').toString().trim().toUpperCase();
+}
+
 function normPlan(s: unknown): string {
   return (s ?? '').toString().replace(/\*/g, '').replace(/\s+/g, ' ').trim();
 }
@@ -106,10 +111,10 @@ function getOccupancyAndLeasedForProperty(
   portfolioUnitDetails: Record<string, unknown>[],
   asOf?: Date
 ): { occupied: number; leased: number; totalUnits: number } | null {
-  const pKey = normProp(prop);
+  const pKey = normPropCanonical(prop);
   if (!Array.isArray(portfolioUnitDetails) || portfolioUnitDetails.length === 0) return null;
   const propUnitDetails = portfolioUnitDetails.filter((r) => {
-    const rProp = normProp(r.Property ?? r.propertyName ?? '');
+    const rProp = normPropCanonical(r.Property ?? r.propertyName ?? '');
     return rProp === pKey;
   });
   if (propUnitDetails.length === 0) return null;
@@ -203,7 +208,7 @@ function getAvailableUnitsFromDetails(
   portfolioUnitDetails: Record<string, unknown>[],
   asOf?: Date
 ): { availableUnits: number; totalUnitsFromDetails: number } | null {
-  const pKey = normProp(prop);
+  const pKey = normPropCanonical(prop);
   if (!Array.isArray(portfolioUnitDetails) || portfolioUnitDetails.length === 0) return null;
   let allReportDates = portfolioUnitDetails
     .map((r) => reportDateFromPortfolioRow(r as Record<string, unknown>))
@@ -216,7 +221,7 @@ function getAvailableUnitsFromDetails(
   const latestReportDate = allReportDates.length > 0 ? allReportDates[0] : null;
   if (!latestReportDate) return null;
   const propUnitDetails = portfolioUnitDetails.filter((r) => {
-    const rProp = normProp((r as Record<string, unknown>).Property ?? (r as Record<string, unknown>).propertyName ?? '');
+    const rProp = normPropCanonical((r as Record<string, unknown>).Property ?? (r as Record<string, unknown>).propertyName ?? '');
     if (rProp !== pKey) return false;
     const reportDate = reportDateFromPortfolioRow(r as Record<string, unknown>);
     return reportDate && reportDate.getTime() === latestReportDate.getTime();
@@ -376,8 +381,8 @@ function getWeightedOccupiedAvgRent(
 ): number | null {
   const occResult = getOccupancyAndLeasedForProperty(prop, portfolioUnitDetails);
   if (!occResult) return null;
-  const pKey = normProp(prop);
-  const pud = portfolioUnitDetails.filter((r) => normProp((r as Record<string, unknown>).Property ?? (r as Record<string, unknown>).propertyName ?? '') === pKey);
+  const pKey = normPropCanonical(prop);
+  const pud = portfolioUnitDetails.filter((r) => normPropCanonical((r as Record<string, unknown>).Property ?? (r as Record<string, unknown>).propertyName ?? '') === pKey);
   let allReportDates = pud.map((r) => parseDate((r as Record<string, unknown>).ReportDate ?? (r as Record<string, unknown>).reportDate)).filter((d): d is Date => d != null).sort((a, b) => b.getTime() - a.getTime());
   const latestReportDate = allReportDates.length > 0 ? allReportDates[0] : null;
   if (!latestReportDate) return null;
@@ -501,10 +506,10 @@ function getVelocityFromLeasing(
   const latestByProp = new Map<string, Record<string, unknown>>();
   for (const r of leasing ?? []) {
     const row = r as Record<string, unknown>;
-    const prop = normProp(row[property]);
+    const prop = normPropCanonical(row[property]);
     const d = parseDate(row[dateCol] ?? row.BatchTimestamp);
     if (!prop || !d) continue;
-    if (propertyFilter && normProp(propertyFilter) !== prop) continue;
+    if (propertyFilter && normPropCanonical(propertyFilter) !== prop) continue;
     const prev = latestByProp.get(prop);
     if (!prev || (parseDate(prev[dateCol]) ?? new Date(0)) < d) latestByProp.set(prop, row);
   }
@@ -557,7 +562,7 @@ function getOccupancyFromUnitMix(
   for (const r of onLatest) {
     const row = r as Record<string, unknown>;
     const prop = normProp(row[propertyName] ?? row['Property'] ?? '');
-    if (propertyFilter && normProp(propertyFilter) !== prop) continue;
+    if (propertyFilter && normPropCanonical(prop) !== propertyFilter) continue;
     const ut = (row[unitType] ?? '').toString().trim();
     const plan = normPlan(row[floorPlan] ?? '');
     const key = `${prop}|${ut}|${plan}`;
@@ -580,7 +585,13 @@ function getOccupancyFromUnitMix(
     const tot = byProperty[prop].totalUnits;
     byProperty[prop].occupancyPct = tot > 0 ? Math.round((byProperty[prop].occupied / tot) * 10000) / 100 : null;
   }
-  return { byProperty };
+  // Collapse by canonical key: same property with different casing (e.g. "The Waters at Millerville" vs "THE WATERS AT MILLERVILLE") — keep the entry with max totalUnits
+  const byCanonical: Record<string, { totalUnits: number; occupied: number; leased: number; occupancyPct: number | null }> = {};
+  for (const [prop, data] of Object.entries(byProperty)) {
+    const can = normPropCanonical(prop);
+    if (!byCanonical[can] || byCanonical[can].totalUnits < data.totalUnits) byCanonical[can] = data;
+  }
+  return { byProperty: byCanonical };
 }
 
 /** Delta to budget = current occupied - budgeted occupancy target. Uses leasing row LeasesNeeded when present (delta), else occupied - (total * budgetPct) from unit mix. */
@@ -595,12 +606,11 @@ function getDeltaToBudgetFromLeasing(
   const latestByProp = new Map<string, Record<string, unknown>>();
   for (const r of leasing ?? []) {
     const row = r as Record<string, unknown>;
-    const prop = normProp(row[property]);
+    const prop = normPropCanonical(row[property]);
     const d = parseDate(row[dateCol] ?? row.BatchTimestamp);
     if (!prop || !d) continue;
-    const key = prop;
-    const prev = latestByProp.get(key);
-    if (!prev || (parseDate(prev[dateCol]) ?? new Date(0)) < d) latestByProp.set(key, row);
+    const prev = latestByProp.get(prop);
+    if (!prev || (parseDate(prev[dateCol]) ?? new Date(0)) < d) latestByProp.set(prop, row);
   }
   const byProperty: Record<string, number> = {};
   let portfolio = 0;
@@ -627,23 +637,36 @@ export function buildKpis(
   const propertyFilter = options?.property?.trim() || undefined;
   const pud = raw.portfolioUnitDetails ?? [];
   const leasing = raw.leasing ?? [];
-  const unitmixOcc = getOccupancyFromUnitMix(raw.unitmix ?? [], propertyFilter);
+  const unitmixOcc = getOccupancyFromUnitMix(raw.unitmix ?? [], propertyFilter ? normPropCanonical(propertyFilter) : undefined);
 
   const propertyKeys = new Set<string>();
-  if (pud.length > 0) {
-    pud.forEach((r) => {
-      const p = normProp((r as Record<string, unknown>).Property ?? (r as Record<string, unknown>).propertyName ?? '');
-      if (p && (!propertyFilter || p === normProp(propertyFilter))) propertyKeys.add(p);
-    });
-  }
+  const displayKeyByCanonical: Record<string, string> = {};
   if (leasing.length > 0) {
     leasing.forEach((r) => {
-      const p = normProp((r as Record<string, unknown>).Property ?? '');
-      if (p && (!propertyFilter || p === normProp(propertyFilter))) propertyKeys.add(p);
+      const row = r as Record<string, unknown>;
+      const displayKey = normProp(row.Property ?? '');
+      const can = normPropCanonical(displayKey);
+      if (!can) return;
+      if (propertyFilter && normPropCanonical(propertyFilter) !== can) return;
+      propertyKeys.add(can);
+      if (!displayKeyByCanonical[can]) displayKeyByCanonical[can] = displayKey;
     });
   }
-  Object.keys(unitmixOcc.byProperty).forEach((p) => {
-    if (!propertyFilter || normProp(propertyFilter) === p) propertyKeys.add(p);
+  if (pud.length > 0) {
+    pud.forEach((r) => {
+      const row = r as Record<string, unknown>;
+      const displayKey = normProp(row.Property ?? row.propertyName ?? '');
+      const can = normPropCanonical(displayKey);
+      if (!can) return;
+      if (propertyFilter && normPropCanonical(propertyFilter) !== can) return;
+      propertyKeys.add(can);
+      if (!displayKeyByCanonical[can]) displayKeyByCanonical[can] = displayKey;
+    });
+  }
+  Object.keys(unitmixOcc.byProperty).forEach((can) => {
+    if (propertyFilter && normPropCanonical(propertyFilter) !== can) return;
+    propertyKeys.add(can);
+    if (!displayKeyByCanonical[can]) displayKeyByCanonical[can] = can;
   });
 
   const byProperty: Record<string, PropertyKpis> = {};
@@ -707,11 +730,12 @@ export function buildKpis(
     const occPct = useUnitMix ? um.occupancyPct : (tot > 0 ? Math.round((occ / tot) * 10000) / 100 : null);
     const av = useUnitMix ? Math.max(0, tot - leas) : (avResult?.availableUnits ?? Math.max(0, tot - leas));
 
+    const displayKey = displayKeyByCanonical[prop] ?? prop;
     const propKeyNorm = (prop ?? '').toString().trim().replace(/\*/g, '').toUpperCase();
-    const budgetedUnits = mmrBudgetedOcc[prop] ?? mmrBudgetedOcc[propKeyNorm] ?? null;
-    const budgetedPct = mmrBudgetedOccPct[prop] ?? mmrBudgetedOccPct[propKeyNorm] ?? null;
+    const budgetedUnits = mmrBudgetedOcc[displayKey] ?? mmrBudgetedOcc[prop] ?? mmrBudgetedOcc[propKeyNorm] ?? null;
+    const budgetedPct = mmrBudgetedOccPct[displayKey] ?? mmrBudgetedOccPct[prop] ?? mmrBudgetedOccPct[propKeyNorm] ?? null;
     byProperty[prop] = {
-      property: prop,
+      property: displayKey,
       occupied: occ,
       leased: leas,
       available: av,
@@ -736,8 +760,15 @@ export function buildKpis(
         })()
       : null;
 
+  // Output byProperty keyed by display name (so frontend can look up by row.Property)
+  const byPropertyDisplay: Record<string, PropertyKpis> = {};
+  for (const [canonical, data] of Object.entries(byProperty)) {
+    const displayKey = displayKeyByCanonical[canonical] ?? canonical;
+    byPropertyDisplay[displayKey] = data;
+  }
+
   return {
-    properties: Object.keys(byProperty).length,
+    properties: Object.keys(byPropertyDisplay).length,
     totalUnits,
     occupied,
     leased,
@@ -747,7 +778,7 @@ export function buildKpis(
     leases7d: velocity.portfolio7d,
     leases28d: velocity.portfolio28d,
     deltaToBudget: delta.portfolio,
-    byProperty,
+    byProperty: byPropertyDisplay,
     latestReportDate,
   };
 }
