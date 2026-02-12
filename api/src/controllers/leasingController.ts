@@ -520,6 +520,19 @@ async function runSyncFromDomoCore(query: Record<string, unknown>): Promise<{ st
       }
       await upsertSyncLog(alias, now, today, hash, count);
       synced.push(alias);
+      // After MMR sync, log all-NULL columns so daily runs can confirm DB matches Domo
+      if (alias === 'MMRData') {
+        try {
+          const nullCols = await getLeasingTableAllNullColumns('MMRData');
+          if (nullCols.length > 0) {
+            console.warn('[leasing/sync] MMRData: after sync, columns still all-NULL:', nullCols.length, nullCols.slice(0, 25).join(', ') + (nullCols.length > 25 ? '...' : ''));
+          } else {
+            console.log('[leasing/sync] MMRData: all columns mapped (no all-NULL columns).');
+          }
+        } catch (e) {
+          console.warn('[leasing/sync] MMRData: could not check null columns:', e instanceof Error ? e.message : e);
+        }
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       errors.push({ dataset: alias, message });

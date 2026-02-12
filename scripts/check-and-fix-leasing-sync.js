@@ -56,12 +56,16 @@ const DOMO_DATASET_KEYS = {
 
 const LEASING_ALIASES = Object.keys(DOMO_DATASET_KEYS);
 
+// Match api normalizeHeader: %→percent, strip $,\-| so pickBestDomoHeader aligns with getVal
 function normalize(s) {
   return String(s)
     .toLowerCase()
+    .replace(/%/g, 'percent')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/\s/g, '');
+    .replace(/\s/g, '')
+    .replace(/[$,\-|]/g, '')
+    .replace(/[()]/g, '');
 }
 
 /** Insert space before capitals then lowercase: UnitNumber -> unit number */

@@ -73,7 +73,7 @@ function normalizeHeader(s: string): string {
     .replace(/[$,\-\|]/g, '');
 }
 
-/** Pick value from row by trying alias, column name, or DB column name. Case-insensitive fallback for CSV headers; then normalized-key match so "Report Date" and "ReportDate" both match. */
+/** Pick value from row by trying alias, column name, or DB column name. Case-insensitive fallback for CSV headers; then normalized-key match so "Report Date" and "ReportDate" both match. Final fallback: any row key that normalizes to the same as the first key (DB column) so Domo columns map even when not in the alias list. */
 function getVal(row: Record<string, unknown>, ...keys: string[]): unknown {
   for (const k of keys) {
     if (Object.prototype.hasOwnProperty.call(row, k) && row[k] !== undefined && row[k] !== '') return row[k];
@@ -98,6 +98,19 @@ function getVal(row: Record<string, unknown>, ...keys: string[]): unknown {
         const v = row[rk];
         if (v !== undefined && v !== '') return v;
         break;
+      }
+    }
+  }
+  // Final fallback: any Domo header that normalizes to same as first key (canonical DB column) — catches variants not in alias list
+  if (keys.length > 0) {
+    const canonicalNorm = normalizeHeader(keys[0]);
+    if (canonicalNorm) {
+      for (const rk of rowKeys) {
+        if (normalizeHeader(rk) === canonicalNorm) {
+          const v = row[rk];
+          if (v !== undefined && v !== '') return v;
+          break;
+        }
       }
     }
   }

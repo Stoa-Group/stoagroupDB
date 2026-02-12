@@ -464,6 +464,13 @@ function getWeightedOccupiedAvgRent(
   return totalOccupiedUnitsWithRent > 0 ? totalWeightedSum / totalOccupiedUnitsWithRent : null;
 }
 
+export interface VelocityBreakdown {
+  newLeases7d: number;
+  newLeases28d: number;
+  renewal7d: number;
+  renewal28d: number;
+}
+
 export interface PropertyKpis {
   property: string;
   occupied: number;
@@ -477,6 +484,8 @@ export interface PropertyKpis {
   leases7d: number | null;
   leases28d: number | null;
   deltaToBudget: number | null;
+  /** When velocity is computed from PUD (app-signed date), New/Renewal breakdown. */
+  velocityBreakdown?: VelocityBreakdown | null;
 }
 
 export interface PortfolioKpis {
@@ -524,6 +533,151 @@ function getVelocityFromLeasing(
     portfolio28d += v28Val;
   }
   return { byProperty, portfolio7d, portfolio28d };
+}
+
+/** Lease type from row (same candidates as frontend getRawLeaseTypeFromRow / normalizeLeaseType). */
+function getLeaseTypeFromRow(r: Record<string, unknown>): 'New' | 'Renewal' | null {
+  const raw =
+    (r.LeaseType ?? r['Lease Type'] ?? r['Current Lease Type'] ?? r.CurrentLeaseType ?? r['Lease Type (Current)'] ?? '')
+      .toString()
+      .trim();
+  const lower = raw.toLowerCase();
+  if (!raw) {
+    const status = (r.UnitLeaseStatus ?? r['Unit/Lease Status'] ?? '').toString().toLowerCase();
+    if (status.includes('pending renewal')) return 'Renewal';
+    return null;
+  }
+  if (lower === 'new' || lower.startsWith('new ') || lower.includes('new lease')) return 'New';
+  if (lower === 'renewal' || lower.startsWith('renewal') || lower.includes('renew')) return 'Renewal';
+  return null;
+}
+
+/**
+ * Velocity from portfolio unit details (app-signed date, New/Renewal by lease type).
+ * Matches frontend calculateVelocityFromUnitDetails: app date only, 7-day = [refDate-7, refDate], 28-day = [refDate-27, refDate].
+ */
+function getVelocityFromPortfolioUnitDetails(
+  prop: string,
+  portfolioUnitDetails: Record<string, unknown>[],
+  asOf?: Date
+): {
+  leases7d: number;
+  leases28d: number;
+  newLeases7d: number;
+  newLeases28d: number;
+  renewal7d: number;
+  renewal28d: number;
+} | null {
+  const pKey = normPropCanonical(prop);
+  if (!Array.isArray(portfolioUnitDetails) || portfolioUnitDetails.length === 0) return null;
+  const propUnits = portfolioUnitDetails.filter((r) => {
+    const rProp = normPropCanonical((r as Record<string, unknown>).Property ?? (r as Record<string, unknown>).propertyName ?? '');
+    return rProp === pKey;
+  });
+  if (propUnits.length === 0) return null;
+
+  const refDate = asOf ? new Date(asOf) : new Date();
+  refDate.setHours(23, 59, 59, 999);
+  const cutoff7 = new Date(refDate);
+  cutoff7.setDate(cutoff7.getDate() - 7);
+  cutoff7.setHours(0, 0, 0, 0);
+  const cutoff28 = new Date(refDate);
+  cutoff28.setDate(cutoff28.getDate() - 27);
+  cutoff28.setHours(0, 0, 0, 0);
+
+  const appDateKeys = [
+    'CurrentLeaseAppSignedDate',
+    'Current Lease App Signed Date',
+    'Current Lease | App Signed Date',
+    'AppSignedDate',
+    'App Signed Date',
+    'ApplicationDate',
+    'Application Date',
+  ];
+  const hasAppDate = (row: Record<string, unknown>) => {
+    for (const k of appDateKeys) {
+      const d = parseDate(row[k]);
+      if (d) return true;
+    }
+    return false;
+  };
+  const getAppDate = (row: Record<string, unknown>): Date | null => {
+    for (const k of appDateKeys) {
+      const d = parseDate(row[k]);
+      if (d) return d;
+    }
+    return null;
+  };
+
+  const unitMap = new Map<string, Record<string, unknown>>();
+  for (const r of propUnits) {
+    const row = r as Record<string, unknown>;
+    const unitNum = (row.UnitNumber ?? row['Unit #'] ?? '').toString().trim();
+    const unitDesignation = (row.UnitDesignation ?? row['Unit Designation'] ?? '').toString().trim();
+    const unitKey = (unitNum || unitDesignation || '').toLowerCase();
+    if (!unitKey) continue;
+    const existing = unitMap.get(unitKey);
+    const rHasApp = hasAppDate(row);
+    if (!existing) {
+      unitMap.set(unitKey, row);
+      continue;
+    }
+    const existingHasApp = hasAppDate(existing);
+    const reportDate = parseDate(row.ReportDate ?? row.reportDate ?? row['Report Date']);
+    const existingReportDate = parseDate(existing.ReportDate ?? existing.reportDate ?? existing['Report Date']);
+    if (rHasApp && !existingHasApp) {
+      unitMap.set(unitKey, row);
+    } else if (!rHasApp && existingHasApp) {
+      // keep existing
+    } else if (reportDate && (!existingReportDate || reportDate > existingReportDate)) {
+      unitMap.set(unitKey, row);
+    }
+  }
+
+  const seenLeases = new Set<string>();
+  let leases7d = 0;
+  let leases28d = 0;
+  let newLeases7d = 0;
+  let newLeases28d = 0;
+  let renewal7d = 0;
+  let renewal28d = 0;
+
+  for (const row of unitMap.values()) {
+    const appSignedDate = getAppDate(row);
+    if (!appSignedDate) continue;
+    const status = (row.UnitLeaseStatus ?? row['Unit/Lease Status'] ?? '').toString().toLowerCase();
+    if (status === 'model' || status.includes('admin') || status.includes('down')) continue;
+    const unitNum = (row.UnitNumber ?? row['Unit #'] ?? '').toString().trim();
+    const unitDesignation = (row.UnitDesignation ?? row['Unit Designation'] ?? '').toString().trim();
+    const unitKey = (unitNum || unitDesignation || '').toLowerCase();
+    const leaseKey = `${unitKey}|${appSignedDate.getTime()}`;
+    if (seenLeases.has(leaseKey)) continue;
+    seenLeases.add(leaseKey);
+
+    const in7 = appSignedDate.getTime() >= cutoff7.getTime() && appSignedDate.getTime() <= refDate.getTime();
+    const in28 = appSignedDate.getTime() >= cutoff28.getTime() && appSignedDate.getTime() <= refDate.getTime();
+    const leaseType = getLeaseTypeFromRow(row);
+
+    if (in7) {
+      leases7d++;
+      if (leaseType === 'New') newLeases7d++;
+      else if (leaseType === 'Renewal') renewal7d++;
+    }
+    if (in28) {
+      leases28d++;
+      if (leaseType === 'New') newLeases28d++;
+      else if (leaseType === 'Renewal') renewal28d++;
+    }
+  }
+
+  return {
+    leases7d,
+    leases28d,
+    newLeases7d,
+    newLeases28d,
+    renewal7d,
+    renewal28d,
+  };
 }
 
 /**
@@ -685,33 +839,41 @@ export function buildKpis(
     const avResult = getAvailableUnitsFromDetails(prop, pud, asOfDate);
     const avgRent = getWeightedOccupiedAvgRent(prop, pud);
 
-    // Prefer unit mix for occupancy/totalUnits/leased when available (same definition as frontend / RealPage Unit Mix).
-    if (um && um.totalUnits > 0) {
-      occupiedByProperty[prop] = Math.round(um.occupied);
-      unitsByProperty[prop] = um.totalUnits;
-      totalUnits += um.totalUnits;
-      occupied += Math.round(um.occupied);
-      leased += Math.round(um.leased);
-      available += Math.max(0, um.totalUnits - Math.round(um.leased));
-    } else if (occResult) {
+    // Prefer PUD (RealPage boxscore) for occupancy/leased/available when we have portfolio unit details.
+    if (occResult) {
       occupiedByProperty[prop] = occResult.occupied;
       unitsByProperty[prop] = occResult.totalUnits;
       totalUnits += occResult.totalUnits;
       occupied += occResult.occupied;
       leased += occResult.leased;
       available += avResult?.availableUnits ?? Math.max(0, occResult.totalUnits - occResult.leased);
+    } else if (um && um.totalUnits > 0) {
+      occupiedByProperty[prop] = Math.round(um.occupied);
+      unitsByProperty[prop] = um.totalUnits;
+      totalUnits += um.totalUnits;
+      occupied += Math.round(um.occupied);
+      leased += Math.round(um.leased);
+      available += Math.max(0, um.totalUnits - Math.round(um.leased));
     } else if (avResult) {
       available += avResult.availableUnits;
     }
-    const usedLeased = um && um.totalUnits > 0 ? Math.round(um.leased) : occResult?.leased ?? 0;
+    const usedLeased = occResult?.leased ?? (um && um.totalUnits > 0 ? Math.round(um.leased) : 0);
     if (avgRent != null && usedLeased > 0) {
       weightedRentSum += avgRent * usedLeased;
       weightedRentCount += usedLeased;
     }
   }
 
-  const velocity = getVelocityFromLeasing(leasing, propertyFilter);
+  const velocityFromLeasing = getVelocityFromLeasing(leasing, propertyFilter);
   const delta = getDeltaToBudgetFromLeasing(leasing, occupiedByProperty, unitsByProperty);
+
+  const velocityFromPudByProp: Record<string, { leases7d: number; leases28d: number; newLeases7d: number; newLeases28d: number; renewal7d: number; renewal28d: number }> = {};
+  if (pud.length > 0) {
+    for (const prop of propertyKeys) {
+      const v = getVelocityFromPortfolioUnitDetails(prop, pud, asOfDate);
+      if (v) velocityFromPudByProp[prop] = v;
+    }
+  }
 
   const mmrBudgetedOcc = options?.mmrBudgetedOcc ?? {};
   const mmrBudgetedOccPct = options?.mmrBudgetedOccPct ?? {};
@@ -720,15 +882,21 @@ export function buildKpis(
     const occResult = getOccupancyAndLeasedForProperty(prop, pud, asOfDate);
     const avResult = getAvailableUnitsFromDetails(prop, pud, asOfDate);
     const avgRent = getWeightedOccupiedAvgRent(prop, pud);
-    const vel = velocity.byProperty[prop] ?? { leases7d: 0, leases28d: 0 };
+    const velPud = velocityFromPudByProp[prop];
+    const velLeasing = velocityFromLeasing.byProperty[prop] ?? { leases7d: 0, leases28d: 0 };
+    const vel = velPud
+      ? { leases7d: velPud.leases7d, leases28d: velPud.leases28d }
+      : velLeasing;
     const d = delta.byProperty[prop] ?? null;
 
-    const useUnitMix = um && um.totalUnits > 0;
-    const tot = useUnitMix ? um.totalUnits : (occResult?.totalUnits ?? 0);
-    const occ = useUnitMix ? Math.round(um.occupied) : (occResult?.occupied ?? 0);
-    const leas = useUnitMix ? Math.round(um.leased) : (occResult?.leased ?? 0);
-    const occPct = useUnitMix ? um.occupancyPct : (tot > 0 ? Math.round((occ / tot) * 10000) / 100 : null);
-    const av = useUnitMix ? Math.max(0, tot - leas) : (avResult?.availableUnits ?? Math.max(0, tot - leas));
+    const usePud = occResult != null;
+    const tot = usePud ? occResult.totalUnits : (um?.totalUnits ?? 0);
+    const occ = usePud ? occResult.occupied : (um ? Math.round(um.occupied) : 0);
+    const leas = usePud ? occResult.leased : (um ? Math.round(um.leased) : 0);
+    const occPct = tot > 0 ? Math.round((occ / tot) * 10000) / 100 : null;
+    const av = usePud
+      ? (avResult?.availableUnits ?? Math.max(0, tot - leas))
+      : (um ? Math.max(0, um.totalUnits - Math.round(um.leased)) : (avResult?.availableUnits ?? Math.max(0, tot - leas)));
 
     const displayKey = displayKeyByCanonical[prop] ?? prop;
     const propKeyNorm = (prop ?? '').toString().trim().replace(/\*/g, '').toUpperCase();
@@ -747,6 +915,15 @@ export function buildKpis(
       leases7d: vel.leases7d,
       leases28d: vel.leases28d,
       deltaToBudget: d,
+      velocityBreakdown:
+        velPud != null
+          ? {
+              newLeases7d: velPud.newLeases7d,
+              newLeases28d: velPud.newLeases28d,
+              renewal7d: velPud.renewal7d,
+              renewal28d: velPud.renewal28d,
+            }
+          : undefined,
     };
   }
 
@@ -767,6 +944,9 @@ export function buildKpis(
     byPropertyDisplay[displayKey] = data;
   }
 
+  const portfolio7d = Object.values(byProperty).reduce((s, p) => s + (p.leases7d ?? 0), 0);
+  const portfolio28d = Object.values(byProperty).reduce((s, p) => s + (p.leases28d ?? 0), 0);
+
   return {
     properties: Object.keys(byPropertyDisplay).length,
     totalUnits,
@@ -775,8 +955,8 @@ export function buildKpis(
     available,
     occupancyPct: totalUnits > 0 ? Math.round((occupied / totalUnits) * 10000) / 100 : null,
     avgLeasedRent: weightedRentCount > 0 ? weightedRentSum / weightedRentCount : null,
-    leases7d: velocity.portfolio7d,
-    leases28d: velocity.portfolio28d,
+    leases7d: portfolio7d,
+    leases28d: portfolio28d,
     deltaToBudget: delta.portfolio,
     byProperty: byPropertyDisplay,
     latestReportDate,
