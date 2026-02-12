@@ -509,6 +509,68 @@ function getVelocityFromLeasing(
   return { byProperty, portfolio7d, portfolio28d };
 }
 
+/**
+ * Occupancy/leased from Unit Mix (RealPage – same definition as frontend app.js).
+ * Most recent ReportDate only; dedupe by PropertyName|UnitType|FloorPlan.
+ * Per property: totalUnits = sum(TotalUnits), occupied = sum(TotalUnits * PercentOccupied/100), leased = sum(TotalUnits * percentLeased/100).
+ */
+function getOccupancyFromUnitMix(
+  unitmixRows: Record<string, unknown>[],
+  propertyFilter?: string
+): { byProperty: Record<string, { totalUnits: number; occupied: number; leased: number; occupancyPct: number | null }> } {
+  const byProperty: Record<string, { totalUnits: number; occupied: number; leased: number; occupancyPct: number | null }> = {};
+  if (!Array.isArray(unitmixRows) || unitmixRows.length === 0) return { byProperty };
+
+  const reportDate = 'ReportDate';
+  const propertyName = 'PropertyName';
+  const unitType = 'UnitType';
+  const floorPlan = 'FloorPlan';
+  const totalUnitsCol = 'TotalUnits';
+  const pctOcc = 'PercentOccupied';
+  const pctLeased = 'percentLeased';
+
+  let latestDate: Date | null = null;
+  for (const r of unitmixRows) {
+    const d = parseDate((r as Record<string, unknown>)[reportDate]);
+    if (d && (!latestDate || d > latestDate)) latestDate = d;
+  }
+  if (!latestDate) return { byProperty };
+
+  const onLatest = unitmixRows.filter((r) => {
+    const d = parseDate((r as Record<string, unknown>)[reportDate]);
+    return d && d.getTime() === latestDate!.getTime();
+  });
+
+  const seen = new Set<string>();
+  for (const r of onLatest) {
+    const row = r as Record<string, unknown>;
+    const prop = normProp(row[propertyName] ?? row['Property'] ?? '');
+    if (propertyFilter && normProp(propertyFilter) !== prop) continue;
+    const ut = (row[unitType] ?? '').toString().trim();
+    const plan = normPlan(row[floorPlan] ?? '');
+    const key = `${prop}|${ut}|${plan}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const units = num(row[totalUnitsCol]) ?? 0;
+    const pctO = num(row[pctOcc]) ?? 0;
+    const pctL = num(row[pctLeased]) ?? 0;
+    const occupiedRow = units * (pctO / 100);
+    const leasedRow = units * (pctL / 100);
+
+    if (!byProperty[prop]) byProperty[prop] = { totalUnits: 0, occupied: 0, leased: 0, occupancyPct: null };
+    byProperty[prop].totalUnits += units;
+    byProperty[prop].occupied += occupiedRow;
+    byProperty[prop].leased += leasedRow;
+  }
+
+  for (const prop of Object.keys(byProperty)) {
+    const tot = byProperty[prop].totalUnits;
+    byProperty[prop].occupancyPct = tot > 0 ? Math.round((byProperty[prop].occupied / tot) * 10000) / 100 : null;
+  }
+  return { byProperty };
+}
+
 /** Delta to budget = current occupied - budgeted occupancy target. Uses leasing row LeasesNeeded when present (delta), else occupied - (total * budgetPct) from unit mix. */
 function getDeltaToBudgetFromLeasing(
   leasing: Record<string, unknown>[],
@@ -553,6 +615,7 @@ export function buildKpis(
   const propertyFilter = options?.property?.trim() || undefined;
   const pud = raw.portfolioUnitDetails ?? [];
   const leasing = raw.leasing ?? [];
+  const unitmixOcc = getOccupancyFromUnitMix(raw.unitmix ?? [], propertyFilter);
 
   const propertyKeys = new Set<string>();
   if (pud.length > 0) {
@@ -567,6 +630,9 @@ export function buildKpis(
       if (p && (!propertyFilter || p === normProp(propertyFilter))) propertyKeys.add(p);
     });
   }
+  Object.keys(unitmixOcc.byProperty).forEach((p) => {
+    if (!propertyFilter || normProp(propertyFilter) === p) propertyKeys.add(p);
+  });
 
   const byProperty: Record<string, PropertyKpis> = {};
   let totalUnits = 0;
@@ -579,10 +645,20 @@ export function buildKpis(
   const unitsByProperty: Record<string, number> = {};
 
   for (const prop of propertyKeys) {
+    const um = unitmixOcc.byProperty[prop];
     const occResult = getOccupancyAndLeasedForProperty(prop, pud, asOfDate);
     const avResult = getAvailableUnitsFromDetails(prop, pud, asOfDate);
     const avgRent = getWeightedOccupiedAvgRent(prop, pud);
-    if (occResult) {
+
+    // Prefer unit mix for occupancy/totalUnits/leased when available (same definition as frontend / RealPage Unit Mix).
+    if (um && um.totalUnits > 0) {
+      occupiedByProperty[prop] = Math.round(um.occupied);
+      unitsByProperty[prop] = um.totalUnits;
+      totalUnits += um.totalUnits;
+      occupied += Math.round(um.occupied);
+      leased += Math.round(um.leased);
+      available += Math.max(0, um.totalUnits - Math.round(um.leased));
+    } else if (occResult) {
       occupiedByProperty[prop] = occResult.occupied;
       unitsByProperty[prop] = occResult.totalUnits;
       totalUnits += occResult.totalUnits;
@@ -592,9 +668,10 @@ export function buildKpis(
     } else if (avResult) {
       available += avResult.availableUnits;
     }
-    if (avgRent != null && occResult && occResult.leased > 0) {
-      weightedRentSum += avgRent * occResult.leased;
-      weightedRentCount += occResult.leased;
+    const usedLeased = um && um.totalUnits > 0 ? Math.round(um.leased) : occResult?.leased ?? 0;
+    if (avgRent != null && usedLeased > 0) {
+      weightedRentSum += avgRent * usedLeased;
+      weightedRentCount += usedLeased;
     }
   }
 
@@ -604,23 +681,30 @@ export function buildKpis(
   const mmrBudgetedOcc = options?.mmrBudgetedOcc ?? {};
   const mmrBudgetedOccPct = options?.mmrBudgetedOccPct ?? {};
   for (const prop of propertyKeys) {
+    const um = unitmixOcc.byProperty[prop];
     const occResult = getOccupancyAndLeasedForProperty(prop, pud, asOfDate);
     const avResult = getAvailableUnitsFromDetails(prop, pud, asOfDate);
     const avgRent = getWeightedOccupiedAvgRent(prop, pud);
     const vel = velocity.byProperty[prop] ?? { leases7d: 0, leases28d: 0 };
     const d = delta.byProperty[prop] ?? null;
-    const tot = occResult?.totalUnits ?? 0;
-    const occ = occResult?.occupied ?? 0;
+
+    const useUnitMix = um && um.totalUnits > 0;
+    const tot = useUnitMix ? um.totalUnits : (occResult?.totalUnits ?? 0);
+    const occ = useUnitMix ? Math.round(um.occupied) : (occResult?.occupied ?? 0);
+    const leas = useUnitMix ? Math.round(um.leased) : (occResult?.leased ?? 0);
+    const occPct = useUnitMix ? um.occupancyPct : (tot > 0 ? Math.round((occ / tot) * 10000) / 100 : null);
+    const av = useUnitMix ? Math.max(0, tot - leas) : (avResult?.availableUnits ?? Math.max(0, tot - leas));
+
     const propKeyNorm = (prop ?? '').toString().trim().replace(/\*/g, '').toUpperCase();
     const budgetedUnits = mmrBudgetedOcc[prop] ?? mmrBudgetedOcc[propKeyNorm] ?? null;
     const budgetedPct = mmrBudgetedOccPct[prop] ?? mmrBudgetedOccPct[propKeyNorm] ?? null;
     byProperty[prop] = {
       property: prop,
       occupied: occ,
-      leased: occResult?.leased ?? 0,
-      available: avResult?.availableUnits ?? Math.max(0, tot - (occResult?.leased ?? 0)),
+      leased: leas,
+      available: av,
       totalUnits: tot,
-      occupancyPct: tot > 0 ? Math.round((occ / tot) * 10000) / 100 : null,
+      occupancyPct: occPct,
       budgetedOccupancyUnits: budgetedUnits != null ? budgetedUnits : null,
       budgetedOccupancyPct: budgetedPct != null ? budgetedPct : null,
       avgLeasedRent: avgRent ?? null,

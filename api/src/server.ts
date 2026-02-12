@@ -33,7 +33,16 @@ const PORT = Number(process.env.PORT) || 3000;
 // Middleware
 app.use(helmet());
 // CORS: allow Domo (*.domo.com) always so Leasing dashboard can call from Domo Custom Apps; plus CORS_ORIGINS if set.
-const isDomoOrigin = (o: string | undefined) => o && /\.domo\.com$/i.test(o);
+// Origin header is full URL (e.g. https://custom.domo.com) so check hostname, not the string suffix.
+const isDomoOrigin = (o: string | undefined): boolean => {
+  if (!o || typeof o !== 'string') return false;
+  try {
+    const host = new URL(o).hostname;
+    return host === 'domo.com' || host.endsWith('.domo.com');
+  } catch {
+    return false;
+  }
+};
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   const origin = req.get('Origin');
   if (isDomoOrigin(origin)) {
