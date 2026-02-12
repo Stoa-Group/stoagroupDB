@@ -530,7 +530,7 @@ function filterPortfolioUnitDetailsToMostRecentReportDateDedupeByUnit(
 }
 
 /**
- * Filter leasing rows to: (1) same month as PUD's most recent report date (leasing is monthly), (2) one row per property (dedupe), (3) only Lease Up / Stabilized.
+ * Filter leasing rows to: (1) same month as PUD's most recent report date (leasing is monthly), (2) one row per property (dedupe), (3) include if status is Lease Up / Stabilized / Critical / Warning, or if no MMR status (so properties without MMR still show).
  * Uses portfolioUnitDetails.ReportDate for the report month; leasing rows in that month are kept (one per property, latest in month wins).
  */
 function filterLeasingRowsToMostRecentReportDateDedupeAndStatus(
@@ -567,7 +567,9 @@ function filterLeasingRowsToMostRecentReportDateDedupeAndStatus(
     const propRaw = pick(row, 'Property', 'property', 'PropertyName');
     const prop = normProp(propRaw);
     if (!prop) continue;
-    if (!isLeaseUpOrStabilized(statusByProperty[prop])) continue;
+    const status = statusByProperty[prop];
+    // Include if status is Lease Up/Stabilized/Critical/Warning, or if no MMR status (missing properties like Freeport, Crestview, McGowin, Promenade when MMR has no row)
+    if (status !== undefined && status !== '' && !isLeaseUpOrStabilized(status)) continue;
     const existing = byProp.get(prop);
     const rowDate = parseDate(pick(row, ...dateCandidates));
     if (!existing || !rowDate || (parseDate(pick(existing, ...dateCandidates)) ?? new Date(0)) < rowDate) {
@@ -920,7 +922,41 @@ export async function buildDashboardFromRaw(
       String((b as Record<string, unknown>).Property ?? (b as Record<string, unknown>).property ?? '')
     )
   );
-  const rows = sorted.map((r) => normalizeLeasingRowToFrontend(r as Record<string, unknown>, mmrOcc));
+  let rows = sorted.map((r) => normalizeLeasingRowToFrontend(r as Record<string, unknown>, mmrOcc));
+
+  // Include properties that have KPI/PUD data but no leasing row (e.g. Freeport, Crestview, McGowin, Promenade)
+  const rowPropertySet = new Set(rows.map((r) => normProp(r.Property ?? r.property ?? '')));
+  const byProp = kpis.byProperty ?? {};
+  const syntheticRows: Record<string, unknown>[] = [];
+  for (const [displayName, data] of Object.entries(byProp)) {
+    const nkey = normProp(displayName);
+    if (!nkey || rowPropertySet.has(nkey)) continue;
+    const totalUnits = data.totalUnits ?? 0;
+    syntheticRows.push(
+      normalizeLeasingRowToFrontend(
+        {
+          Property: displayName,
+          property: displayName,
+          Units: totalUnits,
+          TotalUnits: totalUnits,
+          LeasesNeeded: null,
+          '7DayLeasingVelocity': data.leases7d ?? 0,
+          '28DayLeasingVelocity': data.leases28d ?? 0,
+          LeasingVelocity7Day: data.leases7d ?? 0,
+          LeasingVelocity28Day: data.leases28d ?? 0,
+          MonthOf: month,
+          BatchTimestamp: month,
+        },
+        mmrOcc
+      )
+    );
+    rowPropertySet.add(nkey);
+  }
+  if (syntheticRows.length > 0) {
+    rows = [...rows, ...syntheticRows].sort((a, b) =>
+      String(a.Property ?? a.property ?? '').localeCompare(String(b.Property ?? b.property ?? ''))
+    );
+  }
 
   // Add display-name keys so frontend can look up by Property as shown in UI (e.g. "The Waters at Millerville")
   addDisplayNameKeysToPayloadMaps(rows, unitmixStruct, utradeIndex, leasingTS);

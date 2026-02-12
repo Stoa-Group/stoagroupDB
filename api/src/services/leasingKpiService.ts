@@ -202,6 +202,43 @@ function getOccupancyAndLeasedForProperty(
     if (status.includes('vacant')) return status.includes('leased');
     return !isOccupiedNTV(row);
   }).length;
+
+  if (process.env.DEBUG_LEASING_UNITS === 'true' || process.env.DEBUG_LEASING_UNITS === '1') {
+    const statusKey = (r: Record<string, unknown>) =>
+      (r.UnitLeaseStatus ?? r['Unit/Lease Status'] ?? '').toString().trim();
+    const unitKeyOf = (r: Record<string, unknown>) => {
+      const plan = normPlan(r.FloorPlan ?? r['Floor Plan'] ?? '');
+      const num = (r.UnitNumber ?? r['Unit #'] ?? '').toString().trim();
+      const des = (r.UnitDesignation ?? r['Unit Designation'] ?? '').toString().trim();
+      return `${plan}-${(num || des || '').toLowerCase()}`;
+    };
+    const unitsLog = deduplicatedUnits.map((r) => {
+      const row = r as Record<string, unknown>;
+      const uk = unitKeyOf(row);
+      const status = statusKey(row);
+      const occupied = isOccupiedBoxscoreLogic(row, latestReportDate, { unitKeysWithApplicantRow });
+      const leased = (() => {
+        const s = status.toLowerCase();
+        if (!s) return false;
+        if (s.includes('model') || s.includes('admin') || s.includes('corporate') || s.includes('free') || s.includes('down')) return false;
+        if (s.includes('vacant')) return s.includes('leased');
+        return !isOccupiedNTV(row);
+      })();
+      return { unitKey: uk, status, occupied, leased };
+    });
+    const occupancyPct = totalUnits > 0 ? Math.round((currentOccupied / totalUnits) * 10000) / 100 : null;
+    console.log('[DEBUG_LEASING_UNITS]', {
+      property: prop,
+      latestReportDate: latestReportDate?.toISOString?.()?.slice(0, 10),
+      totalUnits,
+      occupied: currentOccupied,
+      leased: currentLeased,
+      occupancyPct,
+      leasedPct: totalUnits > 0 ? Math.round((currentLeased / totalUnits) * 10000) / 100 : null,
+      units: unitsLog,
+    });
+  }
+
   return { occupied: currentOccupied, leased: currentLeased, totalUnits };
 }
 
