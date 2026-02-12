@@ -938,25 +938,16 @@ export async function getAllForDashboard(): Promise<LeasingDashboardRaw> {
 
 // ---------- DashboardSnapshot (pre-computed payload) ----------
 const T_SNAPSHOT = `${LEASING_SCHEMA}.DashboardSnapshot`;
-/** Keep at most this many snapshots (oldest deleted after each insert). */
-const SNAPSHOT_RETENTION_COUNT = 50;
+/** Single snapshot only: table is wiped and replaced on each build (snapshots are large). */
 
-/** Returns the single most recent snapshot by BuiltAt (most recent first). Only one row is read. */
+/** Returns the stored snapshot (single row). */
 export async function getDashboardSnapshot(): Promise<{ payload: string; builtAt: Date } | null> {
   const pool = await getConnection();
-  // Always order by BuiltAt DESC so we pull most recent first; TOP 1 = only one row loaded
-  let r = await pool.request().query(`
+  const r = await pool.request().query(`
     SELECT TOP 1 Payload, BuiltAt FROM ${T_SNAPSHOT}
     WHERE Payload IS NOT NULL AND LEN(CAST(Payload AS NVARCHAR(MAX))) > 0
     ORDER BY BuiltAt DESC
   `);
-  if (r.recordset.length === 0 || r.recordset[0].Payload == null) {
-    r = await pool.request().query(`
-      SELECT TOP 1 Payload, BuiltAt FROM ${T_SNAPSHOT}
-      WHERE Id IS NULL AND Payload IS NOT NULL AND LEN(CAST(Payload AS NVARCHAR(MAX))) > 0
-      ORDER BY BuiltAt DESC
-    `);
-  }
   if (r.recordset.length === 0 || r.recordset[0].Payload == null) return null;
   const raw = String(r.recordset[0].Payload);
   return {
@@ -965,9 +956,10 @@ export async function getDashboardSnapshot(): Promise<{ payload: string; builtAt
   };
 }
 
+/** Wipes the snapshot table and inserts the single new payload (replace-in-place to avoid keeping many large rows). */
 export async function upsertDashboardSnapshot(payloadJson: string): Promise<void> {
   if (!payloadJson || typeof payloadJson !== 'string' || payloadJson.length === 0) {
-    console.warn('[leasing] DashboardSnapshot: skipping upsert (empty payload)');
+    console.warn('[leasing] DashboardSnapshot: skipping (empty payload)');
     return;
   }
   const pool = await getConnection();
@@ -977,51 +969,23 @@ export async function upsertDashboardSnapshot(payloadJson: string): Promise<void
   const transaction = new sql.Transaction(pool);
   try {
     await transaction.begin();
-    // Clean orphan rows (Id IS NULL)
-    await transaction.request().query(`DELETE FROM ${T_SNAPSHOT} WHERE Id IS NULL;`);
-
-    // Next Id: max+1 with UPDLOCK so concurrent rebuilds get distinct ids
-    const nextIdResult = await transaction.request().query(
-      `SELECT ISNULL(MAX(Id), 0) + 1 AS NextId FROM ${T_SNAPSHOT} WITH (UPDLOCK);`
-    );
-    const nextId = (nextIdResult.recordset[0] as { NextId: number }).NextId;
-
+    await transaction.request().query(`DELETE FROM ${T_SNAPSHOT};`);
     await transaction
       .request()
-      .input('id', sql.Int, nextId)
+      .input('id', sql.Int, 1)
       .input('payload', sql.NVarChar(sql.MAX), stored)
       .input('builtAt', sql.DateTime2, now)
       .query(`INSERT INTO ${T_SNAPSHOT} (Id, Payload, BuiltAt) VALUES (@id, @payload, @builtAt);`);
-
-    // Prune: keep only the most recent SNAPSHOT_RETENTION_COUNT rows
-    const pruneResult = await transaction.request().query(`
-      DELETE FROM ${T_SNAPSHOT} WHERE Id NOT IN (
-        SELECT TOP (${SNAPSHOT_RETENTION_COUNT}) Id FROM ${T_SNAPSHOT} ORDER BY BuiltAt DESC
-      );
-    `);
-    const pruned = (pruneResult as { rowsAffected?: number[] }).rowsAffected?.[0] ?? 0;
-
     await transaction.commit();
     console.log(
-      '[leasing] DashboardSnapshot: inserted Id=',
-      nextId,
-      ', BuiltAt=',
+      '[leasing] DashboardSnapshot: replaced single row, BuiltAt=',
       now.toISOString(),
-      'payloadLen=',
-      stored.length,
-      pruned > 0 ? `, pruned ${pruned} old row(s)` : ''
+      ', payloadLen=',
+      stored.length
     );
   } catch (err) {
     await transaction.rollback().catch(() => {});
     throw err;
-  }
-
-  const check = await pool.request().query(`
-    SELECT COUNT(*) AS Cnt FROM ${T_SNAPSHOT} WHERE Payload IS NOT NULL AND LEN(CAST(Payload AS NVARCHAR(MAX))) > 0
-  `);
-  const cnt = (check.recordset[0] as { Cnt: number }).Cnt;
-  if (cnt === 0) {
-    console.warn('[leasing] DashboardSnapshot verify: no valid row after insert. Check that the API .env points to the same DB you query in SSMS.');
   }
 }
 
