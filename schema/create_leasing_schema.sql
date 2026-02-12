@@ -333,3 +333,7 @@ CREATE TABLE leasing.DashboardSnapshot (
   BuiltAt  DATETIME2(0) NOT NULL,
   AsOf     DATE NULL             -- optional: snapshot as-of date for point-in-time (future use)
 );
+
+-- Index so getDashboardSnapshot (ORDER BY BuiltAt DESC, TOP 1) reads most recent row first without full scan
+IF NOT EXISTS (SELECT 1 FROM sys.indexes i JOIN sys.tables t ON i.object_id = t.object_id JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE s.name = 'leasing' AND t.name = 'DashboardSnapshot' AND i.name = 'IX_leasing_DashboardSnapshot_BuiltAt_Desc')
+CREATE NONCLUSTERED INDEX IX_leasing_DashboardSnapshot_BuiltAt_Desc ON leasing.DashboardSnapshot(BuiltAt DESC);

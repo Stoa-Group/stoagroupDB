@@ -574,7 +574,11 @@ export const postSyncFromDomo = async (req: Request, res: Response, next: NextFu
   if (useAsync) {
     syncFromDomoInProgress = true;
     runSyncFromDomoCore(req.query as Record<string, unknown>)
-      .then((r) => console.log('[leasing/sync] background sync done:', r.body?.synced?.length ?? 0, 'tables synced'))
+      .then((r) => {
+        const synced = r.body?.synced;
+        const n = Array.isArray(synced) ? synced.length : 0;
+        console.log('[leasing/sync] background sync done:', n, 'tables synced');
+      })
       .catch((e) => console.error('[leasing/sync] background sync failed:', e instanceof Error ? e.message : e))
       .finally(() => {
         syncFromDomoInProgress = false;
