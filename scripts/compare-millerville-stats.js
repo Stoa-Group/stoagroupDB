@@ -167,6 +167,14 @@ async function main() {
     if (millervilleOcc) console.log('  occupancyPct:', millervilleOcc.occupancyPct, 'occupied:', millervilleOcc.occupied);
   }
 
+  // MMR source: OccupancyPercent from MMR (Domo/source of truth for 90.2%)
+  const mmrOcc = body.dashboard?.mmrOcc || dashboard.mmrOcc || {};
+  const mmrKeys = Object.keys(mmrOcc).filter((k) => /millerville/i.test(k));
+  if (mmrKeys.length > 0) {
+    console.log('\n--- MMR OccupancyPercent (source for display when present) ---');
+    mmrKeys.forEach((k) => console.log('  ', k + ':', mmrOcc[k] + '%'));
+  }
+
   console.log('');
 }
 

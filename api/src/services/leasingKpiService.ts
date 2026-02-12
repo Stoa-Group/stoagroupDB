@@ -52,15 +52,17 @@ function getStatusPriorityForDedup(status: string): number {
 
 /**
  * RealPage BOXSCORE occupied logic (matches frontend isOccupiedBoxscoreLogic in leasing velocity report app.js).
- * Frontend source: calculateOccupiedUnitsFromDetails -> getCurrentOccupancyAndLeasedFromDetails -> isOccupiedBoxscoreLogic.
+ * Frontend source: getCurrentOccupancyAndLeasedFromDetails -> isOccupiedBoxscoreLogic.
  *
- * UnitLeaseStatus rules for OCCUPIED:
+ * UnitLeaseStatus rules for OCCUPIED (all definitions the frontend uses):
  * - Excluded: empty, any status containing "vacant", "model", "admin", "corporate", "free", "down".
  * - Included: "Pending Renewal" (treated as occupied).
- * - Included: status containing "occupied" (Occupied, Occupied NTV, NTVL, etc.) unless:
- *   - unit has applicant row and notice date = report date, or
- *   - notice date is report day minus one (immediate move-out), or
- *   - notice date = report date and status does not contain "ntv" (plain Occupied on notice = vacant).
+ * - Included: status containing "occupied" — e.g. "Occupied", "Occupied -ntv", "Occupied NTV", "Occupied NTVL",
+ *   "Occupied ntvl", "Occupied - NTV", etc. — unless one of the exceptions below applies.
+ * Exceptions (do NOT count as occupied):
+ *   - Unit has applicant/applied row and notice date is on report date (same calendar day).
+ *   - Notice date is report day minus one (immediate move-out).
+ *   - Notice date = report date and status does not contain "ntv" (plain Occupied on notice = vacant).
  * - "Vacant Leased" is NOT occupied (excluded by "vacant"); it counts only toward leased.
  */
 function isOccupiedBoxscoreLogic(
@@ -84,8 +86,12 @@ function isOccupiedBoxscoreLogic(
   );
   const unitKey = `${normPlan(r.FloorPlan ?? r['Floor Plan'] ?? '')}-${(r.UnitNumber ?? r['Unit #'] ?? r.UnitDesignation ?? r['Unit Designation'] ?? '').toString().trim().toLowerCase()}`;
   const unitKeysWithApplicantRow = options?.unitKeysWithApplicantRow;
-  const noticeInReportRange = reportDate && noticeDate && noticeDate.getTime() === reportDate.getTime();
-  if (noticeInReportRange && unitKeysWithApplicantRow && unitKey && unitKeysWithApplicantRow.has(unitKey)) return false;
+  // Same calendar day = notice "on report date" (robust to time component)
+  const noticeOnReportDate =
+    reportDate && noticeDate &&
+    new Date(noticeDate.getFullYear(), noticeDate.getMonth(), noticeDate.getDate()).getTime() ===
+    new Date(reportDate.getFullYear(), reportDate.getMonth(), reportDate.getDate()).getTime();
+  if (noticeOnReportDate && unitKeysWithApplicantRow && unitKey && unitKeysWithApplicantRow.has(unitKey)) return false;
   if (!moveOutDate && noticeDate && reportDate) {
     const noticeDay = new Date(noticeDate.getFullYear(), noticeDate.getMonth(), noticeDate.getDate()).getTime();
     const reportDay = new Date(reportDate.getFullYear(), reportDate.getMonth(), reportDate.getDate()).getTime();
@@ -894,12 +900,12 @@ export function buildKpis(
     const occ = usePud ? occResult.occupied : (um ? Math.round(um.occupied) : 0);
     const leas = usePud ? occResult.leased : (um ? Math.round(um.leased) : 0);
     const occPct = tot > 0 ? Math.round((occ / tot) * 10000) / 100 : null;
+    const displayKey = displayKeyByCanonical[prop] ?? prop;
+    const propKeyNorm = (prop ?? '').toString().trim().replace(/\*/g, '').toUpperCase();
     const av = usePud
       ? (avResult?.availableUnits ?? Math.max(0, tot - leas))
       : (um ? Math.max(0, um.totalUnits - Math.round(um.leased)) : (avResult?.availableUnits ?? Math.max(0, tot - leas)));
 
-    const displayKey = displayKeyByCanonical[prop] ?? prop;
-    const propKeyNorm = (prop ?? '').toString().trim().replace(/\*/g, '').toUpperCase();
     const budgetedUnits = mmrBudgetedOcc[displayKey] ?? mmrBudgetedOcc[prop] ?? mmrBudgetedOcc[propKeyNorm] ?? null;
     const budgetedPct = mmrBudgetedOccPct[displayKey] ?? mmrBudgetedOccPct[prop] ?? mmrBudgetedOccPct[propKeyNorm] ?? null;
     byProperty[prop] = {
