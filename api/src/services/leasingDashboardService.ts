@@ -462,7 +462,7 @@ function pick(row: Record<string, unknown>, ...candidates: string[]): unknown {
   return undefined;
 }
 
-/** Allowed status values for dashboard rows. Includes Lease Up, Stabilized, and report statuses (Critical, Warning) so hub shows all MMR properties. */
+/** Allowed status values for dashboard rows. Includes Lease Up, Stabilized, and report statuses (Critical, Warning). DEAD is never displayed. */
 const LEASING_DASHBOARD_STATUSES = new Set([
   'LEASE UP',
   'LEASE-UP',
@@ -475,6 +475,10 @@ function isLeaseUpOrStabilized(status: string | undefined): boolean {
   if (!status || typeof status !== 'string') return false;
   const s = status.trim().toUpperCase().replace(/\s+/g, ' ');
   return LEASING_DASHBOARD_STATUSES.has(s) || LEASING_DASHBOARD_STATUSES.has(s.replace(/\s/g, '-'));
+}
+
+function isStatusDead(status: string | undefined): boolean {
+  return status != null && String(status).trim().toUpperCase() === 'DEAD';
 }
 
 /** Calendar day (midnight UTC) for a date - for same-day comparison. */
@@ -568,6 +572,7 @@ function filterLeasingRowsToMostRecentReportDateDedupeAndStatus(
     const prop = normProp(propRaw);
     if (!prop) continue;
     const status = statusByProperty[prop];
+    if (isStatusDead(status)) continue;
     // Include if status is Lease Up/Stabilized/Critical/Warning, or if no MMR status (missing properties like Freeport, Crestview, McGowin, Promenade when MMR has no row)
     if (status !== undefined && status !== '' && !isLeaseUpOrStabilized(status)) continue;
     const existing = byProp.get(prop);
@@ -959,7 +964,7 @@ export async function buildDashboardFromRaw(
   );
   let rows = sorted.map((r) => normalizeLeasingRowToFrontend(r as Record<string, unknown>, mmrOcc));
 
-  // Include properties that have KPI/PUD data but no leasing row (e.g. Freeport, Crestview, McGowin, Promenade)
+  // Include properties that have KPI/PUD data but no leasing row (e.g. Freeport, Crestview, McGowin, Promenade). Do not add dead or 0 PUD units.
   const rowPropertySet = new Set(rows.map((r) => normProp(r.Property ?? r.property ?? '')));
   const byProp = kpis.byProperty ?? {};
   const syntheticRows: Record<string, unknown>[] = [];
@@ -967,6 +972,8 @@ export async function buildDashboardFromRaw(
     const nkey = normProp(displayName);
     if (!nkey || rowPropertySet.has(nkey)) continue;
     const totalUnits = data.totalUnits ?? 0;
+    if (totalUnits === 0) continue;
+    if (isStatusDead(statusByProperty[nkey])) continue;
     syntheticRows.push(
       normalizeLeasingRowToFrontend(
         {
@@ -997,7 +1004,23 @@ export async function buildDashboardFromRaw(
   addDisplayNameKeysToPayloadMaps(rows, unitmixStruct, utradeIndex, leasingTS);
 
   // Velocity all-time avg (7d and 28d) per property from leasingTS; merge into kpis.byProperty
-  const kpisWithVelocityAvg = addVelocityAllTimeAvgToKpis(kpis, leasingTS);
+  let kpisWithVelocityAvg = addVelocityAllTimeAvgToKpis(kpis, leasingTS);
+
+  // Do not display properties with status DEAD or 0 total units in PUD
+  const hiddenNormKeys = new Set<string>();
+  for (const [normKey, status] of Object.entries(statusByProperty)) {
+    if (isStatusDead(status)) hiddenNormKeys.add(normKey);
+  }
+  for (const [displayName, data] of Object.entries(kpisWithVelocityAvg.byProperty ?? {})) {
+    const nkey = normProp(displayName);
+    if (nkey && (data.totalUnits == null || data.totalUnits === 0)) hiddenNormKeys.add(nkey);
+  }
+  rows = rows.filter((r) => !hiddenNormKeys.has(normProp(String(r.Property ?? r.property ?? '').trim())));
+  const filteredByProperty = { ...kpisWithVelocityAvg.byProperty };
+  for (const key of Object.keys(filteredByProperty)) {
+    if (hiddenNormKeys.has(normProp(key))) delete filteredByProperty[key];
+  }
+  kpisWithVelocityAvg = { ...kpisWithVelocityAvg, byProperty: filteredByProperty };
 
   // Portfolio breakdown arrays (use display names from rows for property field)
   const propDisplayByNorm = displayNamesByNormalizedKey(rows);
