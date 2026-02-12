@@ -613,7 +613,7 @@ export const postSyncAddAlias = async (req: Request, res: Response, next: NextFu
   }
 };
 
-/** Rebuild and store the dashboard snapshot (called after sync and on startup; fire-and-forget). */
+/** Rebuild and store the dashboard snapshot with every leasing table (raw) + computed dashboard. Backend uses snapshot to prepopulate and run calculations like Domo. */
 export async function rebuildDashboardSnapshot(): Promise<void> {
   try {
     const raw = await getAllForDashboard();
@@ -622,6 +622,16 @@ export async function rebuildDashboardSnapshot(): Promise<void> {
     const now = new Date();
     const fullResponse = JSON.stringify({
       success: true,
+      raw: {
+        leasing: raw.leasing,
+        mmrRows: raw.mmrRows,
+        utradeRows: raw.utradeRows,
+        portfolioUnitDetails: raw.portfolioUnitDetails,
+        units: raw.units,
+        unitmix: raw.unitmix,
+        pricing: raw.pricing,
+        recents: raw.recents,
+      },
       dashboard: safe,
       _meta: { source: AGGREGATION_SOURCE, fromSnapshot: true, builtAt: now.toISOString() },
     });
@@ -633,10 +643,9 @@ export async function rebuildDashboardSnapshot(): Promise<void> {
 
 /**
  * GET /api/leasing/dashboard
- * Single pre-computed dashboard payload. Serves from DashboardSnapshot if present (fast);
- * otherwise computes from raw tables and returns (slower). Frontend is visual-only.
+ * Returns every leasing table (raw) plus the computed dashboard so the backend can prepopulate and run calculations like Domo.
+ * Serves from DashboardSnapshot if present (payload has raw: { leasing, mmrRows, utradeRows, portfolioUnitDetails, units, unitmix, pricing, recents } and dashboard); otherwise builds from DB and returns same shape.
  * Query: asOf (optional) YYYY-MM-DD.
- * All paths return JSON-serializable dashboard (Maps converted to plain objects) so the client gets full data.
  */
 export const getDashboard = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -670,12 +679,23 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
     const safe = dashboardPayloadToJsonSafe(dashboard);
     const fullResponse = JSON.stringify({
       success: true,
+      raw: {
+        leasing: raw.leasing,
+        mmrRows: raw.mmrRows,
+        utradeRows: raw.utradeRows,
+        portfolioUnitDetails: raw.portfolioUnitDetails,
+        units: raw.units,
+        unitmix: raw.unitmix,
+        pricing: raw.pricing,
+        recents: raw.recents,
+      },
       dashboard: safe,
       _meta: { source: AGGREGATION_SOURCE, asOf },
     });
     await upsertDashboardSnapshot(fullResponse);
     res.json({
       success: true,
+      raw: { leasing: raw.leasing, mmrRows: raw.mmrRows, utradeRows: raw.utradeRows, portfolioUnitDetails: raw.portfolioUnitDetails, units: raw.units, unitmix: raw.unitmix, pricing: raw.pricing, recents: raw.recents },
       dashboard: safe,
       _meta: { source: AGGREGATION_SOURCE, asOf },
     });

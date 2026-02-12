@@ -13,6 +13,16 @@
 
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
+
+const GZ_PREFIX = 'gz:';
+function decompressPayload(stored) {
+  if (!stored || typeof stored !== 'string') return null;
+  if (!stored.startsWith(GZ_PREFIX)) return stored;
+  const b64 = stored.slice(GZ_PREFIX.length);
+  const compressed = Buffer.from(b64, 'base64');
+  return zlib.gunzipSync(compressed).toString('utf8');
+}
 
 for (const p of [
   path.join(__dirname, '..', 'api', '.env'),
@@ -103,6 +113,45 @@ async function run() {
     console.log('leasing.DashboardSnapshot: total rows =', n, '| rows with non-empty Payload =', hasData);
     if (n > 0 && hasData === 0)
       console.log('  -> All rows have NULL or empty Payload. Check that the API .env points to this DB and that rebuild/sync ran successfully.');
+
+    // Decompress and show decoded JSON summary (Id=1 first, then any row with Payload)
+    console.log('\n--- Decoded snapshot (uncompressed Payload) ---');
+    const payloadRow = await pool.request()
+      .input('id', sql.Int, 1)
+      .query('SELECT Id, BuiltAt, Payload FROM leasing.DashboardSnapshot WHERE Id = @id');
+    let row = payloadRow.recordset[0];
+    if (!row || !row.Payload) {
+      const anyRow = await pool.request().query(`
+        SELECT TOP 1 Id, BuiltAt, Payload FROM leasing.DashboardSnapshot WHERE Payload IS NOT NULL AND LEN(CAST(Payload AS NVARCHAR(MAX))) > 0
+      `);
+      row = anyRow.recordset[0];
+    }
+    if (row && row.Payload) {
+      const raw = String(row.Payload);
+      const decoded = decompressPayload(raw);
+      if (decoded) {
+        console.log('  Decoded length:', decoded.length, 'chars');
+        try {
+          const json = JSON.parse(decoded);
+          console.log('  Root keys:', Object.keys(json));
+          if (json.success !== undefined) console.log('  success:', json.success);
+          if (json.dashboard) {
+            const d = json.dashboard;
+            console.log('  dashboard keys:', Object.keys(d));
+            if (Array.isArray(d.rows)) console.log('  dashboard.rows.length:', d.rows.length);
+            if (d.rows && d.rows[0]) console.log('  first row keys (sample):', Object.keys(d.rows[0]).slice(0, 12));
+          }
+          if (json._meta) console.log('  _meta:', json._meta);
+        } catch (e) {
+          console.log('  JSON parse error:', e.message);
+          console.log('  First 200 chars:', decoded.slice(0, 200));
+        }
+      } else {
+        console.log('  (decompress failed or not gz:)');
+      }
+    } else {
+      console.log('  (no row with Payload to decode)');
+    }
   } finally {
     await pool.close();
     console.log('\nDone.');
