@@ -43,10 +43,10 @@ if ! echo "$CHECK_RESULT" | grep -q '"changes":true'; then
   exit 0
 fi
 
-echo "Domo changes detected; running sync-from-domo..."
-# Run sync
+echo "Domo changes detected; starting sync-from-domo (async)..."
+# Use ?async=true so the API returns 202 immediately and runs sync in background (avoids 502 timeout)
 if [ -n "$SECRET" ]; then
-  curl -sS -X POST -H "Content-Type: application/json" -H "X-Sync-Secret: $SECRET" "$SYNC_URL"
+  curl -sS -X POST -H "Content-Type: application/json" -H "X-Sync-Secret: $SECRET" "${SYNC_URL}?async=true"
 else
-  curl -sS -X POST -H "Content-Type: application/json" "$SYNC_URL"
+  curl -sS -X POST -H "Content-Type: application/json" "${SYNC_URL}?async=true"
 fi

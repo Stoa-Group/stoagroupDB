@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Render cron (e.g. every 15 min): call GET /api/leasing/sync-check first.
- * Only when Domo data has changed (response.changes === true) do we run POST /api/leasing/sync-from-domo.
- * Otherwise exit 0 immediately so we don't full-sync every run.
+ * When Domo data has changed, POST sync-from-domo?async=true so the API returns 202 immediately
+ * and runs sync in background (avoids 502 from gateway timeout). When no changes, rebuild snapshot.
  * Needs: API_BASE_URL; optional: LEASING_SYNC_WEBHOOK_SECRET.
  */
 const https = require('https');
@@ -10,8 +10,9 @@ const http = require('http');
 
 const base = (process.env.API_BASE_URL || '').replace(/\/$/, '');
 const secret = process.env.LEASING_SYNC_WEBHOOK_SECRET || '';
-// Sync-from-domo can take several minutes; 10 min client timeout
-const SYNC_TIMEOUT_MS = Number(process.env.LEASING_SYNC_TIMEOUT_MS) || 600000;
+const SYNC_TIMEOUT_MS = Number(process.env.LEASING_SYNC_TIMEOUT_MS) || 60000; // async=true so we only wait for 202
+const RETRY_DELAY_MS = Number(process.env.LEASING_SYNC_RETRY_DELAY_MS) || 45000; // 45s between retries
+const MAX_RETRIES = 2; // retry 502/503/504 up to this many times (0 = no retry)
 if (!base) {
   console.error('API_BASE_URL not set');
   process.exit(1);
@@ -44,10 +45,14 @@ function post(path, timeoutMs = SYNC_TIMEOUT_MS) {
     req.on('error', reject);
     req.setTimeout(timeoutMs, () => {
       req.destroy();
-      reject(new Error(`sync-from-domo timed out after ${timeoutMs / 1000}s`));
+      reject(new Error(`request timed out after ${timeoutMs / 1000}s`));
     });
     req.end();
   });
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 (async () => {
@@ -74,26 +79,49 @@ function post(path, timeoutMs = SYNC_TIMEOUT_MS) {
       }
       process.exit(0);
     }
-    console.log('Domo changes detected; running sync-from-domo...');
-    const syncRes = await post('/api/leasing/sync-from-domo');
-    const ok = syncRes.statusCode === 200 || syncRes.statusCode === 207;
-    if (!ok) {
-      console.error('sync-from-domo failed:', syncRes.statusCode, syncRes.body.slice(0, 300));
-      process.exit(1);
+    console.log('Domo changes detected; starting sync-from-domo (async)...');
+    let lastRes = null;
+    let lastErr = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const syncRes = await post('/api/leasing/sync-from-domo?async=true');
+        lastRes = syncRes;
+        const ok = syncRes.statusCode === 202 || syncRes.statusCode === 200 || syncRes.statusCode === 207;
+        if (ok) {
+          if (syncRes.statusCode === 202) {
+            console.log('Sync started in background (202).');
+          } else {
+            let summary;
+            try {
+              summary = JSON.parse(syncRes.body);
+            } catch (_) {
+              summary = null;
+            }
+            console.log('Sync completed.', summary?.synced?.length ? summary.synced.length + ' tables synced.' : '');
+          }
+          process.exit(0);
+        }
+        if ([502, 503, 504].includes(syncRes.statusCode) && attempt < MAX_RETRIES) {
+          console.warn('sync-from-domo returned', syncRes.statusCode, '- retrying in', RETRY_DELAY_MS / 1000, 's (' + (attempt + 1) + '/' + (MAX_RETRIES + 1) + ')');
+          await sleep(RETRY_DELAY_MS);
+          continue;
+        }
+        console.error('sync-from-domo failed:', syncRes.statusCode, syncRes.body.slice(0, 300));
+        process.exit(1);
+      } catch (e) {
+        lastErr = e;
+        const isTimeout = e?.message?.includes('timed out');
+        if ((isTimeout || e?.code === 'ECONNRESET') && attempt < MAX_RETRIES) {
+          console.warn('sync-from-domo error:', e?.message || e, '- retrying in', RETRY_DELAY_MS / 1000, 's (' + (attempt + 1) + '/' + (MAX_RETRIES + 1) + ')');
+          await sleep(RETRY_DELAY_MS);
+          continue;
+        }
+        console.error(e);
+        process.exit(1);
+      }
     }
-    let summary;
-    try {
-      summary = JSON.parse(syncRes.body);
-    } catch (_) {
-      summary = null;
-    }
-    if (syncRes.statusCode === 207 && summary?.errors?.length) {
-      console.log('Sync completed with partial errors:', summary.synced?.length || 0, 'synced,', summary.errors?.length || 0, 'errors');
-      summary.errors.forEach((e) => console.error('  -', e.dataset + ':', e.message?.slice(0, 80)));
-    } else {
-      console.log('Sync completed.', summary?.synced?.length ? summary.synced.length + ' tables synced.' : '');
-    }
-    process.exit(0);
+    console.error('sync-from-domo failed after retries:', lastRes?.statusCode ?? lastErr?.message);
+    process.exit(1);
   } catch (e) {
     console.error(e);
     process.exit(1);

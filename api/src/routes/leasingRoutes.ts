@@ -35,7 +35,7 @@ router.get('/sync-health', leasingController.getSyncHealth);
 router.get('/domo-columns', leasingController.getDomoColumns);
 // Add a Domo CSV header as alias for a table/column (for check-and-fix-leasing-sync script).
 router.post('/sync-add-alias', leasingController.postSyncAddAlias);
-// Sync from Domo: backend fetches datasets from Domo API and syncs. For Domo alerts or cron. Optional header X-Sync-Secret. Query: ?dataset=alias to sync only that table.
+// Sync from Domo: backend fetches datasets from Domo API and syncs. For cron use ?async=true to get 202 and run sync in background (avoids 502). Query: ?dataset=alias, ?force=true. Optional X-Sync-Secret.
 router.post('/sync-from-domo', leasingController.postSyncFromDomo);
 // Wipe: truncate all leasing tables and SyncLog. Query: ?table=alias to wipe only that table. Same auth as sync-from-domo.
 router.post('/wipe', leasingController.postWipeLeasing);

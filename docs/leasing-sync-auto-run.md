@@ -100,11 +100,13 @@ Run the sync at a fixed interval (e.g. every hour). No Domo configuration requir
 4. **Schedule:** e.g. `0 * * * *` (every hour) in Render’s cron UI.
 5. Set the same env vars as the API (including `API_BASE_URL`, `DOMO_*`, `LEASING_SYNC_WEBHOOK_SECRET` if you use it). For cron, `API_BASE_URL` should be the **public URL of your API** (e.g. `https://your-api.onrender.com`).
 
-**Simpler:** use a one-line cron that calls your API (so the API does the Domo fetch):
+**Simpler:** use the repo cron script (recommended; uses **async** mode to avoid 502):
 
-- **Start command:**  
-  `curl -X POST "${API_BASE_URL}/api/leasing/sync-from-domo" -H "X-Sync-Secret: ${LEASING_SYNC_WEBHOOK_SECRET}"`
-- Run that on a schedule. Your API must have `DOMO_CLIENT_ID`, `DOMO_CLIENT_SECRET`, and all `DOMO_DATASET_*` env vars set.
+- **Start command:** `node scripts/cron-leasing-sync-node.js`
+- The script calls **POST /api/leasing/sync-from-domo?async=true**, so the API returns **202** immediately and runs the sync in the background. That avoids **502 Bad Gateway** when the gateway (e.g. Render) times out long requests.
+- Run on a schedule (e.g. every 15 min). Set `API_BASE_URL` to your API’s public URL and, if used, `LEASING_SYNC_WEBHOOK_SECRET`.
+
+If you trigger sync manually without async, use a long timeout; sync can take many minutes.
 
 ### B. GitHub Actions
 

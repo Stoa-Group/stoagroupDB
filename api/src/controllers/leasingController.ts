@@ -445,11 +445,113 @@ function sleep(ms: number): Promise<void> {
 
 let syncFromDomoInProgress = false;
 
+/** Internal: run sync loop and return response. Used for both sync and async modes. */
+async function runSyncFromDomoCore(query: Record<string, unknown>): Promise<{ statusCode: number; body: Record<string, unknown> }> {
+  const token = await getDomoToken();
+  const synced: string[] = [];
+  const skipped: string[] = [];
+  const errors: Array<{ dataset: string; message: string }> = [];
+  const now = new Date();
+  const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z');
+  const fetched: string[] = [];
+
+  const forceSync = String(query.force || '').toLowerCase() === 'true';
+  let entries = Object.entries(DOMO_DATASET_KEYS);
+  const onlyDataset = (query.dataset as string)?.trim();
+  if (onlyDataset) {
+    const alias = onlyDataset === 'recents' ? 'recentrents' : onlyDataset;
+    const matchKey = (k: string) => (k === 'recents' ? 'recentrents' : k).toLowerCase() === (alias as string).toLowerCase();
+    entries = entries.filter(([k]) => matchKey(k));
+    if (entries.length === 0) {
+      return { statusCode: 400, body: { success: false, error: `Unknown dataset: ${onlyDataset}` } };
+    }
+  }
+
+  for (const [key, envKey] of entries) {
+    const datasetId = process.env[envKey]?.trim();
+    if (!datasetId) continue;
+
+    const alias = key === 'recents' ? 'recentrents' : key;
+    if (!SYNC_MAP[alias]) continue;
+
+    let rows: Record<string, unknown>[];
+    try {
+      const csvText = await fetchDomoDatasetCsv(datasetId, token);
+      rows = parseCsvToRows(csvText) as Record<string, unknown>[];
+      fetched.push(`${alias}:${rows.length}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      errors.push({ dataset: alias, message });
+      continue;
+    }
+
+    const count = rows.length;
+    const hash = dataHash(rows as unknown[]);
+    if (!forceSync) {
+      try {
+        const allowed = await canSync(alias, hash);
+        if (!allowed) {
+          skipped.push(alias);
+          continue;
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        errors.push({ dataset: alias, message });
+        continue;
+      }
+    }
+
+    const syncFn = SYNC_MAP[alias];
+    const chunks: Record<string, unknown>[][] = [];
+    for (let i = 0; i < rows.length; i += SYNC_CHUNK_SIZE) {
+      chunks.push(rows.slice(i, i + SYNC_CHUNK_SIZE));
+    }
+
+    try {
+      const t0 = Date.now();
+      for (let i = 0; i < chunks.length; i++) {
+        const replace = false;
+        const written = await syncFn(chunks[i], replace);
+        const done = (i + 1) * SYNC_CHUNK_SIZE;
+        console.log(`[leasing/sync] ${alias}: ${Math.min(done, count)}/${count} input → ${written} rows written (batch ${i + 1}/${chunks.length}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+        if (i < chunks.length - 1 && SYNC_REST_MS > 0) {
+          await sleep(SYNC_REST_MS);
+        }
+      }
+      await upsertSyncLog(alias, now, today, hash, count);
+      synced.push(alias);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      errors.push({ dataset: alias, message });
+    }
+  }
+
+  if (fetched.length === 0 && errors.length === 0) {
+    return {
+      statusCode: 400,
+      body: { success: false, error: 'No datasets configured. Set at least one DOMO_DATASET_* env var.', fetched: [], errors },
+    };
+  }
+
+  rebuildDashboardSnapshot().catch(() => {});
+  return {
+    statusCode: errors.length ? 207 : 200,
+    body: {
+      success: errors.length === 0,
+      fetched,
+      synced,
+      skipped,
+      errors: errors.length ? errors : undefined,
+      _meta: { at: now.toISOString(), chunkSize: SYNC_CHUNK_SIZE, restMs: SYNC_REST_MS, force: forceSync },
+    },
+  };
+}
+
 /**
  * POST /api/leasing/sync-from-domo
- * Fetches leasing datasets from Domo one table at a time, syncs each in batches (default 5000 rows)
- * with a short rest between batches to avoid timeouts and overload. Call from cron or Domo webhook.
+ * Fetches leasing datasets from Domo one table at a time, syncs each in batches (default 5000 rows).
  * Only one sync runs at a time; concurrent requests get 409.
+ * Query: ?async=true — return 202 immediately and run sync in background (avoids gateway timeouts / 502).
  * Env: LEASING_SYNC_CHUNK_SIZE (default 5000), LEASING_SYNC_REST_MS (default 3000).
  */
 export const postSyncFromDomo = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -457,117 +559,34 @@ export const postSyncFromDomo = async (req: Request, res: Response, next: NextFu
     res.status(409).json({ success: false, error: 'Sync already in progress' });
     return;
   }
-  syncFromDomoInProgress = true;
-  try {
-    const secret = process.env.LEASING_SYNC_WEBHOOK_SECRET?.trim();
-    if (secret) {
-      const provided = (req.headers['x-sync-secret'] as string) || (req.body && typeof req.body === 'object' && (req.body as { secret?: string }).secret);
-      if (provided !== secret) {
-        res.status(401).json({ success: false, error: 'Invalid or missing sync secret' });
-        return;
-      }
-    }
 
-    const token = await getDomoToken();
-    const synced: string[] = [];
-    const skipped: string[] = [];
-    const errors: Array<{ dataset: string; message: string }> = [];
-    const now = new Date();
-    const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z');
-    const fetched: string[] = [];
-
-    const forceSync = String(req.query.force || '').toLowerCase() === 'true';
-    let entries = Object.entries(DOMO_DATASET_KEYS);
-    const onlyDataset = (req.query.dataset as string)?.trim();
-    if (onlyDataset) {
-      const alias = onlyDataset === 'recents' ? 'recentrents' : onlyDataset;
-      const matchKey = (k: string) => (k === 'recents' ? 'recentrents' : k).toLowerCase() === alias.toLowerCase();
-      entries = entries.filter(([k]) => matchKey(k));
-      if (entries.length === 0) {
-        res.status(400).json({ success: false, error: `Unknown dataset: ${onlyDataset}` });
-        return;
-      }
-    }
-
-    for (const [key, envKey] of entries) {
-      const datasetId = process.env[envKey]?.trim();
-      if (!datasetId) continue;
-
-      const alias = key === 'recents' ? 'recentrents' : key;
-      if (!SYNC_MAP[alias]) continue;
-
-      let rows: Record<string, unknown>[];
-      try {
-        const csvText = await fetchDomoDatasetCsv(datasetId, token);
-        rows = parseCsvToRows(csvText) as Record<string, unknown>[];
-        fetched.push(`${alias}:${rows.length}`);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        errors.push({ dataset: alias, message });
-        continue;
-      }
-
-      const count = rows.length;
-      const hash = dataHash(rows as unknown[]);
-      if (!forceSync) {
-        try {
-          const allowed = await canSync(alias, hash);
-          if (!allowed) {
-            skipped.push(alias);
-            continue;
-          }
-        } catch (e) {
-          const message = e instanceof Error ? e.message : String(e);
-          errors.push({ dataset: alias, message });
-          continue;
-        }
-      }
-
-      const syncFn = SYNC_MAP[alias];
-      const chunks: Record<string, unknown>[][] = [];
-      for (let i = 0; i < rows.length; i += SYNC_CHUNK_SIZE) {
-        chunks.push(rows.slice(i, i + SYNC_CHUNK_SIZE));
-      }
-
-      try {
-        const t0 = Date.now();
-        for (let i = 0; i < chunks.length; i++) {
-          const replace = false; // always upsert: append/merge by key, never wipe table
-          const written = await syncFn(chunks[i], replace);
-          const done = (i + 1) * SYNC_CHUNK_SIZE;
-          console.log(`[leasing/sync] ${alias}: ${Math.min(done, count)}/${count} input → ${written} rows written (batch ${i + 1}/${chunks.length}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-          if (i < chunks.length - 1 && SYNC_REST_MS > 0) {
-            await sleep(SYNC_REST_MS);
-          }
-        }
-        await upsertSyncLog(alias, now, today, hash, count);
-        synced.push(alias);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        errors.push({ dataset: alias, message });
-      }
-    }
-
-    if (fetched.length === 0 && errors.length === 0) {
-      res.status(400).json({
-        success: false,
-        error: 'No datasets configured. Set at least one DOMO_DATASET_* env var.',
-        fetched: [],
-        errors,
-      });
+  const secret = process.env.LEASING_SYNC_WEBHOOK_SECRET?.trim();
+  if (secret) {
+    const provided = (req.headers['x-sync-secret'] as string) || (req.body && typeof req.body === 'object' && (req.body as { secret?: string }).secret);
+    if (provided !== secret) {
+      res.status(401).json({ success: false, error: 'Invalid or missing sync secret' });
       return;
     }
+  }
 
-    // Always rebuild snapshot after sync so cron keeps dashboard snapshot current (uses latest DB + new logic).
-    rebuildDashboardSnapshot().catch(() => {});
-    res.status(errors.length ? 207 : 200).json({
-      success: errors.length === 0,
-      fetched,
-      synced,
-      skipped,
-      errors: errors.length ? errors : undefined,
-      _meta: { at: now.toISOString(), chunkSize: SYNC_CHUNK_SIZE, restMs: SYNC_REST_MS, force: forceSync },
-    });
+  const useAsync = String(req.query.async || '').toLowerCase() === 'true';
+
+  if (useAsync) {
+    syncFromDomoInProgress = true;
+    runSyncFromDomoCore(req.query as Record<string, unknown>)
+      .then((r) => console.log('[leasing/sync] background sync done:', r.body?.synced?.length ?? 0, 'tables synced'))
+      .catch((e) => console.error('[leasing/sync] background sync failed:', e instanceof Error ? e.message : e))
+      .finally(() => {
+        syncFromDomoInProgress = false;
+      });
+    res.status(202).json({ success: true, message: 'Sync started in background' });
+    return;
+  }
+
+  syncFromDomoInProgress = true;
+  try {
+    const result = await runSyncFromDomoCore(req.query as Record<string, unknown>);
+    res.status(result.statusCode).json(result.body);
   } catch (error) {
     next(error);
   } finally {
