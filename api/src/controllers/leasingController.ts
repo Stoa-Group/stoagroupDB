@@ -129,6 +129,31 @@ async function getStatusByPropertyFromCoreProjects(): Promise<Record<string, str
   return out;
 }
 
+/**
+ * All ProjectNames from core.Project where Stage is Lease-Up or Stabilized (for hub property list).
+ */
+async function getLeaseUpStabilizedProjectNames(): Promise<string[]> {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request().query(`
+      SELECT ProjectName
+      FROM core.Project
+      WHERE ProjectName IS NOT NULL
+        AND LTRIM(RTRIM(ISNULL(Stage, N''))) IN (N'Lease-Up', N'Stabilized')
+      ORDER BY ProjectName
+    `);
+    const names: string[] = [];
+    for (const row of result.recordset || []) {
+      const r = row as { ProjectName?: string };
+      const name = r.ProjectName != null ? String(r.ProjectName).trim() : '';
+      if (name) names.push(name);
+    }
+    return names;
+  } catch {
+    return [];
+  }
+}
+
 function parseCsvToRows(csvText: string): Record<string, unknown>[] {
   const lines = csvText.trim().split(/\r?\n/).filter(Boolean);
   if (lines.length === 0) return [];
@@ -255,6 +280,8 @@ export interface LeasingDashboardPayload {
   portfolioAvailableBreakdown?: Array<{ property: string; totalUnits: number; available: number }>;
   /** 4- and 7-week occupancy projections (move-ins, move-outs, net change, projection date). */
   projections4And7Weeks?: Record<string, unknown>;
+  /** All property names from core.Project where Stage is Lease-Up or Stabilized (for hub dropdown). */
+  hubPropertyNames?: string[];
 }
 
 /**
@@ -722,6 +749,7 @@ export async function rebuildDashboardSnapshot(): Promise<void> {
     const raw = await getAllForDashboard();
     const statusByPropertyFromCore = await getStatusByPropertyFromCoreProjects();
     const dashboard = await buildDashboardFromRaw(raw, { statusByPropertyFromCore });
+    dashboard.hubPropertyNames = await getLeaseUpStabilizedProjectNames();
     const safe = dashboardPayloadToJsonSafe(dashboard);
     const now = new Date();
     const fullResponse = JSON.stringify({
@@ -765,6 +793,9 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
         res.end(payload);
       } else {
         const dashboard = JSON.parse(payload) as LeasingDashboardPayload;
+        if (!Array.isArray(dashboard.hubPropertyNames) || dashboard.hubPropertyNames.length === 0) {
+          dashboard.hubPropertyNames = await getLeaseUpStabilizedProjectNames();
+        }
         res.json({
           success: true,
           dashboard,
@@ -780,6 +811,7 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
     console.log('[leasing/dashboard] raw fetch', Date.now() - t0, 'ms');
     const statusByPropertyFromCore = await getStatusByPropertyFromCoreProjects();
     const dashboard = await buildDashboardFromRaw(raw, { statusByPropertyFromCore });
+    dashboard.hubPropertyNames = await getLeaseUpStabilizedProjectNames();
     console.log('[leasing/dashboard] build done', Date.now() - t0, 'ms');
     const safe = dashboardPayloadToJsonSafe(dashboard);
     const fullResponse = JSON.stringify({
