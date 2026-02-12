@@ -45,7 +45,19 @@ function getStatusPriorityForDedup(status: string): number {
   return 6;
 }
 
-/** RealPage BOXSCORE occupied logic (matches frontend isOccupiedBoxscoreLogic). */
+/**
+ * RealPage BOXSCORE occupied logic (matches frontend isOccupiedBoxscoreLogic in leasing velocity report app.js).
+ * Frontend source: calculateOccupiedUnitsFromDetails -> getCurrentOccupancyAndLeasedFromDetails -> isOccupiedBoxscoreLogic.
+ *
+ * UnitLeaseStatus rules for OCCUPIED:
+ * - Excluded: empty, any status containing "vacant", "model", "admin", "corporate", "free", "down".
+ * - Included: "Pending Renewal" (treated as occupied).
+ * - Included: status containing "occupied" (Occupied, Occupied NTV, NTVL, etc.) unless:
+ *   - unit has applicant row and notice date = report date, or
+ *   - notice date is report day minus one (immediate move-out), or
+ *   - notice date = report date and status does not contain "ntv" (plain Occupied on notice = vacant).
+ * - "Vacant Leased" is NOT occupied (excluded by "vacant"); it counts only toward leased.
+ */
 function isOccupiedBoxscoreLogic(
   r: Record<string, unknown>,
   reportDate: Date,
