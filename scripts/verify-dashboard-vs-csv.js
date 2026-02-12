@@ -9,6 +9,8 @@
  * Or: API_BASE_URL=http://localhost:3000 node scripts/verify-dashboard-vs-csv.js
  *
  * Optional: USE_PERFORMANCE_OVERVIEW_CSV=true makes the API overlay CSV values (for testing).
+ * After fixing MMR aliases or re-syncing (e.g. compare-mmr-domo-to-db.js --fix), run with
+ *   --rebuild  so the dashboard snapshot is rebuilt from fresh MMR data.
  * Exits 0 if all CSV properties match; 1 if any mismatch or API/CSV error.
  */
 const path = require('path');

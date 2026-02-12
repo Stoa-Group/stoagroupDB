@@ -82,19 +82,19 @@ function getVal(row: Record<string, unknown>, ...keys: string[]): unknown {
   for (const k of keys) {
     const want = String(k).toLowerCase();
     for (const rk of rowKeys) {
-      if (rk.toLowerCase() === want) {
+      if (rk.replace(/^\uFEFF/, '').toLowerCase() === want) {
         const v = row[rk];
         if (v !== undefined && v !== '') return v;
         break;
       }
     }
   }
-  // Fallback: match by normalized key (no spaces, no punctuation) so "Report Date" and "ReportDate" both match
+  // Fallback: match by normalized key (no spaces, no punctuation) so "Report Date" and "ReportDate" both match. Strip BOM from row keys so Domo "\uFEFFReport Date" matches.
   for (const k of keys) {
     const wantNorm = normalizeHeader(k);
     if (!wantNorm) continue;
     for (const rk of rowKeys) {
-      if (normalizeHeader(rk) === wantNorm) {
+      if (normalizeHeader(rk.replace(/^\uFEFF/, '')) === wantNorm) {
         const v = row[rk];
         if (v !== undefined && v !== '') return v;
         break;
@@ -106,7 +106,7 @@ function getVal(row: Record<string, unknown>, ...keys: string[]): unknown {
     const canonicalNorm = normalizeHeader(keys[0]);
     if (canonicalNorm) {
       for (const rk of rowKeys) {
-        if (normalizeHeader(rk) === canonicalNorm) {
+        if (normalizeHeader(rk.replace(/^\uFEFF/, '')) === canonicalNorm) {
           const v = row[rk];
           if (v !== undefined && v !== '') return v;
           break;

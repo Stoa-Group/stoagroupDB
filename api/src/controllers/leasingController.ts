@@ -154,11 +154,16 @@ async function getLeaseUpStabilizedProjectNames(): Promise<string[]> {
   }
 }
 
+/** Strip BOM so Domo headers like "\uFEFFReport Date" match our expected "Report Date". */
+function normalizeCsvHeader(h: string): string {
+  return h.replace(/^\uFEFF/, '').trim();
+}
+
 function parseCsvToRows(csvText: string): Record<string, unknown>[] {
   const lines = csvText.trim().split(/\r?\n/).filter(Boolean);
   if (lines.length === 0) return [];
   const header = lines[0];
-  const headers = parseCsvLine(header);
+  const headers = parseCsvLine(header).map(normalizeCsvHeader);
   const rows: Record<string, unknown>[] = [];
   for (let i = 1; i < lines.length; i++) {
     const values = parseCsvLine(lines[i]);

@@ -5,7 +5,8 @@
  * Usage:
  *   node scripts/compare-mmr-domo-to-db.js              # Report null columns + list Domo headers
  *   node scripts/compare-mmr-domo-to-db.js --sync       # Sync MMR first, then report
- *   node scripts/compare-mmr-domo-to-db.js --fix       # Apply mappings from mmr-null-column-mapping.json, then wipe + sync
+ *   node scripts/compare-mmr-domo-to-db.js --fix        # Apply mappings, wipe MMR, then sync
+ *   node scripts/compare-mmr-domo-to-db.js --fix-no-wipe # Apply mappings from mmr-null-column-mapping.json, then sync (no wipe)
  *
  * To fix null columns:
  *   1. Run without --fix to see "DB columns that are entirely NULL" and "Domo MMR headers".
@@ -70,6 +71,7 @@ async function apiPost(pathname, body = null) {
 async function main() {
   const doSync = process.argv.includes('--sync');
   const doFix = process.argv.includes('--fix');
+  const doFixNoWipe = process.argv.includes('--fix-no-wipe');
 
   console.log('MMRData: compare Domo columns to DB (all-NULL columns)\n');
 
@@ -89,12 +91,43 @@ async function main() {
   console.log('');
 
   console.log('DB columns that are entirely NULL (' + nullColumns.length + '):');
-  if (nullColumns.length === 0) {
+  if (nullColumns.length === 0 && !doFixNoWipe) {
     console.log('None — MMR DB matches Domo.');
     return;
   }
-  console.log(nullColumns.join(', '));
+  if (nullColumns.length > 0) console.log(nullColumns.join(', '));
   console.log('');
+
+  if (doFixNoWipe) {
+    let mapping = {};
+    if (fs.existsSync(MAPPING_FILE)) {
+      try {
+        mapping = JSON.parse(fs.readFileSync(MAPPING_FILE, 'utf8'));
+      } catch (e) {
+        console.error('Invalid JSON in ' + MAPPING_FILE + ': ' + e.message);
+        process.exit(1);
+      }
+    }
+    const toApply = Object.entries(mapping).filter(([, h]) => h != null && String(h).trim());
+    if (toApply.length === 0) {
+      console.log('No entries in ' + MAPPING_FILE + '. Add column -> Domo header mappings, then re-run with --fix-no-wipe.');
+      return;
+    }
+    console.log('Applying ' + toApply.length + ' aliases from ' + MAPPING_FILE + ' (no wipe)...');
+    for (const [column, domoHeader] of toApply) {
+      const header = String(domoHeader).trim();
+      try {
+        await apiPost('/api/leasing/sync-add-alias', { table: ALIAS, column, domoHeader: header });
+        console.log('  ' + column + ' <- "' + header + '"');
+      } catch (e) {
+        console.warn('  Failed ' + column + ': ' + e.message);
+      }
+    }
+    console.log('Syncing MMR from Domo...');
+    await apiPost('/api/leasing/sync-from-domo?dataset=' + encodeURIComponent(ALIAS));
+    console.log('Sync done.');
+    return;
+  }
 
   if (doFix) {
     let mapping = {};
@@ -109,8 +142,7 @@ async function main() {
     const toApply = nullColumns.filter((col) => mapping[col] && String(mapping[col]).trim());
     if (toApply.length === 0) {
       console.log('No mappings in ' + MAPPING_FILE + '. Add entries like:');
-      const example = {};
-      nullColumns.forEach((c) => { example[c] = '<exact Domo header>'; });
+      const example = nullColumns.reduce((o, c) => ({ ...o, [c]: '<exact Domo header>' }), {});
       console.log(JSON.stringify(example, null, 2));
       console.log('\nThen re-run with --fix.');
       return;
@@ -137,7 +169,8 @@ async function main() {
 
   console.log('To fix: add exact Domo header for each null column to');
   console.log('  ' + MAPPING_FILE);
-  console.log('Example: { "Week4OccPercent": "Week 4 Occ %", "Week7OccPercent": "Week 7 Occ %" }');
+  console.log('Example (use exact headers from Domo list above):');
+  console.log('  { "Week4MoveIns": "Week4: Move Ins", "Week4OccPercent": "Week4: Occ %", "Week7OccPercent": "Week7: Occ %" }');
   console.log('Then run: node scripts/compare-mmr-domo-to-db.js --fix');
 }
 

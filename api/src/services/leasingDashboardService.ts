@@ -462,8 +462,14 @@ function pick(row: Record<string, unknown>, ...candidates: string[]): unknown {
   return undefined;
 }
 
-/** Allowed status values for dashboard rows (lease-up and stabilized only). Normalized for comparison. */
-const LEASING_DASHBOARD_STATUSES = new Set(['LEASE UP', 'LEASE-UP', 'STABILIZED']);
+/** Allowed status values for dashboard rows. Includes Lease Up, Stabilized, and report statuses (Critical, Warning) so hub shows all MMR properties. */
+const LEASING_DASHBOARD_STATUSES = new Set([
+  'LEASE UP',
+  'LEASE-UP',
+  'STABILIZED',
+  'CRITICAL',
+  'WARNING',
+]);
 
 function isLeaseUpOrStabilized(status: string | undefined): boolean {
   if (!status || typeof status !== 'string') return false;
@@ -818,6 +824,13 @@ function buildProjections4And7Weeks(
   };
 }
 
+/** True when Performance Overview CSV is present and has data, and not explicitly disabled via USE_PERFORMANCE_OVERVIEW_CSV=false. */
+export function shouldApplyPerformanceOverviewOverrides(): boolean {
+  if (process.env.USE_PERFORMANCE_OVERVIEW_CSV === 'false') return false;
+  const csvMap = loadPerformanceOverviewCsv();
+  return (csvMap?.size ?? 0) > 0;
+}
+
 /**
  * If Performance_Overview_Properties.csv is present, override KPIs for matching properties
  * so dashboard occupancies, budgeted occupancies, and leased % match the CSV.
@@ -914,7 +927,7 @@ export async function buildDashboardFromRaw(
 
   // Velocity all-time avg (7d and 28d) per property from leasingTS; merge into kpis.byProperty
   let kpisWithVelocityAvg = addVelocityAllTimeAvgToKpis(kpis, leasingTS);
-  if (process.env.USE_PERFORMANCE_OVERVIEW_CSV === 'true') {
+  if (shouldApplyPerformanceOverviewOverrides()) {
     kpisWithVelocityAvg = applyPerformanceOverviewOverrides(kpisWithVelocityAvg);
   }
 
