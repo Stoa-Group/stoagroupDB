@@ -580,6 +580,32 @@ function getVelocityFromLeasing(
   return { byProperty, portfolio7d, portfolio28d };
 }
 
+/** LeasesNeeded (available to lease) from leasing rows – latest row per property by date. Used so dashboard matches leasing dataset. */
+function getLeasesNeededFromLeasing(
+  leasing: Record<string, unknown>[],
+  propertyFilter?: string
+): Record<string, number> {
+  const property = 'Property';
+  const dateCol = 'MonthOf';
+  const leasesNeeded = 'LeasesNeeded';
+  const latestByProp = new Map<string, Record<string, unknown>>();
+  for (const r of leasing ?? []) {
+    const row = r as Record<string, unknown>;
+    const prop = normPropCanonical(row[property]);
+    const d = parseDate(row[dateCol] ?? row.BatchTimestamp);
+    if (!prop || !d) continue;
+    if (propertyFilter && normPropCanonical(propertyFilter) !== prop) continue;
+    const prev = latestByProp.get(prop);
+    if (!prev || (parseDate(prev[dateCol]) ?? new Date(0)) < d) latestByProp.set(prop, row);
+  }
+  const byProperty: Record<string, number> = {};
+  for (const [prop, row] of latestByProp) {
+    const val = num(row[leasesNeeded] ?? row['Leases Needed']);
+    byProperty[prop] = val ?? 0;
+  }
+  return byProperty;
+}
+
 /** Lease type from row (same candidates as frontend getRawLeaseTypeFromRow / normalizeLeaseType). */
 function getLeaseTypeFromRow(r: Record<string, unknown>): 'New' | 'Renewal' | null {
   const raw =
@@ -917,6 +943,7 @@ export function buildKpis(
   }
 
   const velocityFromLeasing = getVelocityFromLeasing(leasing, propertyFilter);
+  const leasesNeededFromLeasing = getLeasesNeededFromLeasing(leasing, propertyFilter);
   const delta = getDeltaToBudgetFromLeasing(leasing, occupiedByProperty, unitsByProperty);
 
   const velocityFromPudByProp: Record<string, { leases7d: number; leases28d: number; newLeases7d: number; newLeases28d: number; renewal7d: number; renewal28d: number }> = {};
@@ -938,9 +965,8 @@ export function buildKpis(
     const avgRent = getWeightedOccupiedAvgRent(prop, pud);
     const velPud = velocityFromPudByProp[prop];
     const velLeasing = velocityFromLeasing.byProperty[prop] ?? { leases7d: 0, leases28d: 0 };
-    const vel = velPud
-      ? { leases7d: velPud.leases7d, leases28d: velPud.leases28d }
-      : velLeasing;
+    // Prefer leasing table (latest row per property) so dashboard matches Raw / leasing dataset
+    const vel = velLeasing != null ? { leases7d: velLeasing.leases7d, leases28d: velLeasing.leases28d } : (velPud ? { leases7d: velPud.leases7d, leases28d: velPud.leases28d } : { leases7d: 0, leases28d: 0 });
     const d = delta.byProperty[prop] ?? null;
 
     const usePud = occResult != null;
@@ -962,9 +988,12 @@ export function buildKpis(
       const leasedPctNorm = mmrLeasedVal <= 1 ? mmrLeasedVal * 100 : mmrLeasedVal;
       leas = Math.round((leasedPctNorm / 100) * tot);
     }
-    const av = usePud
+    // Prefer leasing table LeasesNeeded (latest row per property) so dashboard matches Raw / leasing dataset
+    const avFromLeasing = leasesNeededFromLeasing[prop];
+    const avPud = usePud
       ? (avResult?.availableUnits ?? Math.max(0, tot - leas))
       : (um ? Math.max(0, um.totalUnits - Math.round(um.leased)) : (avResult?.availableUnits ?? Math.max(0, tot - leas)));
+    const av = avFromLeasing != null ? avFromLeasing : avPud;
 
     const budgetedUnits = mmrBudgetedOcc[displayKey] ?? mmrBudgetedOcc[prop] ?? mmrBudgetedOcc[propKeyNorm] ?? null;
     const budgetedPctRaw = mmrBudgetedOccPct[displayKey] ?? mmrBudgetedOccPct[prop] ?? mmrBudgetedOccPct[propKeyNorm] ?? null;
@@ -994,6 +1023,9 @@ export function buildKpis(
           : undefined,
     };
   }
+
+  // Recompute portfolio available from byProperty so it matches sum of (leasing LeasesNeeded when present)
+  available = Object.values(byProperty).reduce((s, p) => s + (p.available ?? 0), 0);
 
   const latestReportDate =
     pud.length > 0
