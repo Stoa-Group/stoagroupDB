@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Run every 15 min: call sync-check first; only run full sync when Domo actually changed (don't full-sync every 15 min).
+# Run every 30 min: call sync-check first; only run full sync when Domo actually changed. When no changes, rebuild snapshot.
 # Usage: set API_BASE_URL and optionally LEASING_SYNC_WEBHOOK_SECRET (env or .env), then:
 #   ./scripts/cron-leasing-sync.sh
-# Crontab: */15 * * * * /path/to/stoagroupDB/scripts/cron-leasing-sync.sh
+# Crontab: */30 * * * * /path/to/stoagroupDB/scripts/cron-leasing-sync.sh
 
 set -e
 cd "$(dirname "$0")/.."

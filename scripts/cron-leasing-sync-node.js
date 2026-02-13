@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Render cron (e.g. every 15 min): call GET /api/leasing/sync-check first.
+ * Render cron (every 30 min): call GET /api/leasing/sync-check first.
  * When Domo data has changed, POST sync-from-domo?async=true so the API returns 202 immediately
  * and runs sync in background (avoids 502 from gateway timeout). When no changes, rebuild snapshot.
  * Needs: API_BASE_URL; optional: LEASING_SYNC_WEBHOOK_SECRET.

@@ -41,7 +41,7 @@ import {
   addDomoAliasOverride,
   DATASET_ALIASES,
 } from '../services/leasingRepository';
-import { buildDashboardFromRaw, dashboardPayloadToJsonSafe, getMmrBudgetByProperty } from '../services/leasingDashboardService';
+import { buildDashboardFromRaw, dashboardPayloadToJsonSafe, ensureDashboardRowsFromKpis, getMmrBudgetByProperty } from '../services/leasingDashboardService';
 import { buildKpis, type PortfolioKpis } from '../services/leasingKpiService';
 import { getConnection } from '../config/database';
 
@@ -802,6 +802,7 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
       } else {
         dashboard = JSON.parse(payload) as LeasingDashboardPayload;
       }
+      ensureDashboardRowsFromKpis(dashboard);
       if (!Array.isArray(dashboard.hubPropertyNames) || dashboard.hubPropertyNames.length === 0) {
         dashboard.hubPropertyNames = await getLeaseUpStabilizedProjectNames();
       }
@@ -836,6 +837,7 @@ export const getDashboard = async (req: Request, res: Response, next: NextFuncti
     console.log('[leasing/dashboard] raw fetch', Date.now() - t0, 'ms');
     const statusByPropertyFromCore = await getStatusByPropertyFromCoreProjects();
     const dashboard = await buildDashboardFromRaw(raw, { statusByPropertyFromCore });
+    ensureDashboardRowsFromKpis(dashboard);
     dashboard.hubPropertyNames = await getLeaseUpStabilizedProjectNames();
     console.log('[leasing/dashboard] build done', Date.now() - t0, 'ms');
     const safe = dashboardPayloadToJsonSafe(dashboard);

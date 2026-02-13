@@ -919,6 +919,44 @@ export function dashboardPayloadToJsonSafe(payload: LeasingDashboardPayload): Re
   return toSerializable(payload) as Record<string, unknown>;
 }
 
+/**
+ * If payload.rows is empty but payload.kpis.byProperty has entries, fill rows from KPIs
+ * so the frontend receives a non-empty rows array and does not fall back to Domo.
+ * Mutates payload in place.
+ */
+export function ensureDashboardRowsFromKpis(
+  payload: LeasingDashboardPayload & { rows?: Array<Record<string, unknown>>; kpis?: { byProperty?: Record<string, Record<string, unknown>> } }
+): void {
+  const rows = payload.rows;
+  if (Array.isArray(rows) && rows.length > 0) return;
+  const byProperty = payload.kpis?.byProperty;
+  if (!byProperty || typeof byProperty !== 'object') return;
+  const propNames = Object.keys(byProperty);
+  if (propNames.length === 0) return;
+  const syntheticRows = propNames
+    .map((propName) => {
+      const kpi = byProperty[propName];
+      if (!kpi || typeof kpi !== 'object') return null;
+      let occPct = kpi.occupancyPct as number | undefined;
+      if (typeof occPct === 'number' && occPct > 1) occPct = occPct / 100;
+      return {
+        Property: propName,
+        property: propName,
+        Units: kpi.totalUnits,
+        TotalUnits: kpi.totalUnits,
+        Occupancy: occPct,
+        OccupancyPercent: kpi.occupancyPct,
+        LeasesNeeded: kpi.available,
+        '7DayLeasingVelocity': kpi.leases7d,
+        '28DayLeasingVelocity': kpi.leases28d,
+      } as Record<string, unknown>;
+    })
+    .filter((r): r is Record<string, unknown> => r != null);
+  if (syntheticRows.length > 0) {
+    (payload as LeasingDashboardPayload).rows = syntheticRows;
+  }
+}
+
 export type BuildDashboardOptions = {
   /** Status by property from core.Project (match by ProjectName). Overrides MMR status when set. */
   statusByPropertyFromCore?: Record<string, string>;
