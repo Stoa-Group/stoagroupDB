@@ -1,6 +1,10 @@
 /**
  * Leasing KPI service – portfolio and by-property KPIs from portfolio unit details and leasing data.
- * Logic ported from leasing velocity report app.js (RealPage BOXSCORE: occupancy, leased, available, velocity, delta to budget).
+ *
+ * PRINCIPLE: Every backend calculation is a direct port of the leasing velocity report frontend (app.js).
+ * We use the same Domo data (portfolio unit details, unit mix, leasing) and the same rules—do not
+ * reinvent logic here. When changing or adding calculations, find the corresponding logic in app.js
+ * and port it; keep comments that name the app.js source (e.g. "Source: app.js getCurrentOccupancyAndLeasedFromDetails").
  */
 import type { LeasingDashboardRaw } from './leasingRepository';
 
@@ -51,8 +55,8 @@ function getStatusPriorityForDedup(status: string): number {
 }
 
 /**
- * RealPage BOXSCORE occupied logic (matches frontend isOccupiedBoxscoreLogic in leasing velocity report app.js).
- * Frontend source: getCurrentOccupancyAndLeasedFromDetails -> isOccupiedBoxscoreLogic.
+ * RealPage BOXSCORE occupied logic.
+ * Source: app.js isOccupiedBoxscoreLogic (used by getCurrentOccupancyAndLeasedFromDetails).
  *
  * UnitLeaseStatus rules for OCCUPIED (all definitions the frontend uses):
  * - Excluded: empty, any status containing "vacant", "model", "admin", "corporate", "free", "down".
@@ -111,7 +115,50 @@ function getLeaseStartDate(r: Record<string, unknown>): Date | null {
   return null;
 }
 
-/** Single-property occupancy and leased from PUD (matches getCurrentOccupancyAndLeasedFromDetails). */
+function getLeaseEndDate(r: Record<string, unknown>): Date | null {
+  const candidates = [r.LeaseEnd, r['Lease End'], r['Lease End Date'], r.LeaseEndDate, r['Lease Expiration'], r.LeaseExpiration];
+  for (const c of candidates) {
+    const d = parseDate(c);
+    if (d) return d;
+  }
+  return null;
+}
+
+function getNoticeDate(r: Record<string, unknown>): Date | null {
+  const candidates = [
+    r.Notice, r['Notice'], r['Notice Date'], r.NoticeDate,
+    r['Notice Given'], r.NoticeGiven, r['Notice Given Date'], r.NoticeGivenDate,
+  ];
+  for (const c of candidates) {
+    const d = parseDate(c);
+    if (d) return d;
+  }
+  return null;
+}
+
+/** Effective move-out date for lookahead: when the unit becomes vacant.
+ *  Default: Move Out → Lease End → Notice. Set env USE_NOTICE_FIRST_FOR_LOOKAHEAD=1 to try Notice → Move Out → Lease End (tune to match RealPage 89%). */
+function getEffectiveMoveOutDate(r: Record<string, unknown>): Date | null {
+  const useNoticeFirst = process.env.USE_NOTICE_FIRST_FOR_LOOKAHEAD === '1' || process.env.USE_NOTICE_FIRST_FOR_LOOKAHEAD === 'true';
+  const moveOut = parseDate(
+    r.MoveOut ?? r['Move Out'] ?? r['Move Out Date'] ?? r.MoveOutDate ?? r['Move-Out'] ?? r['Move-Out Date']
+  );
+  const notice = getNoticeDate(r);
+  const leaseEnd = getLeaseEndDate(r);
+  if (useNoticeFirst) {
+    if (notice) return notice;
+    if (moveOut) return moveOut;
+    return leaseEnd ?? null;
+  }
+  if (moveOut) return moveOut;
+  if (leaseEnd) return leaseEnd;
+  return notice;
+}
+
+/**
+ * Single-property occupancy and leased from portfolio unit details.
+ * Source: app.js getCurrentOccupancyAndLeasedFromDetails (dedupe, isOccupiedBoxscoreLogic, leased = occupied minus NTV-non-preleased + vacant leased).
+ */
 function getOccupancyAndLeasedForProperty(
   prop: string,
   portfolioUnitDetails: Record<string, unknown>[],
@@ -242,9 +289,226 @@ function getOccupancyAndLeasedForProperty(
   return { occupied: currentOccupied, leased: currentLeased, totalUnits };
 }
 
+function unitKeyFromRow(r: Record<string, unknown>): string {
+  const plan = normPlan(r.FloorPlan ?? r['Floor Plan'] ?? '');
+  const num = (r.UnitNumber ?? r['Unit #'] ?? '').toString().trim();
+  const des = (r.UnitDesignation ?? r['Unit Designation'] ?? '').toString().trim();
+  return `${plan}-${(num || des || '').toLowerCase()}`;
+}
+
 /**
- * RealPage BOXSCORE controllable availability (exact port from app.js calculateAvailableUnitsFromDetails).
- * Available = Net Exposure - Model/Admin - Down; Net Exposure = (Total Vacant - Vacant Leased) + (Occupied On Notice - Occupied On Notice Preleased).
+ * Lookahead occupancy to a fixed date or N weeks.
+ * Source: app.js calculateOccupancyProjectionFromUnitMix. Formula: currentOccupied + newLeaseMoveIns - noticesWithoutLeaseStarts (turnovers washed). Uses actual "today" for window; move-ins = Lease Start/Move In in window, new lease = unit not currently occupied; notices in window for occupied units, minus turnovers.
+ */
+function getLookaheadOccupancyForProperty(
+  prop: string,
+  portfolioUnitDetails: Record<string, unknown>[],
+  asOf?: Date,
+  lookaheadWeeks: number = 4,
+  lookaheadEndDate?: string | Date
+): { lookaheadOccupied: number; lookaheadOccPct: number | null; totalUnits: number; currentOccupied: number } | null {
+  const pKey = normPropCanonical(prop);
+  if (!Array.isArray(portfolioUnitDetails) || portfolioUnitDetails.length === 0) return null;
+  const allPropRecords = portfolioUnitDetails.filter((r) => {
+    const rProp = normPropCanonical((r as Record<string, unknown>).Property ?? (r as Record<string, unknown>).propertyName ?? '');
+    return rProp === pKey;
+  }) as Record<string, unknown>[];
+  if (allPropRecords.length === 0) return null;
+  let allReportDates = allPropRecords
+    .map((r) => reportDateFromPortfolioRow(r))
+    .filter((d): d is Date => d != null)
+    .sort((a, b) => b.getTime() - a.getTime());
+  if (asOf) {
+    const cap = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate(), 23, 59, 59, 999);
+    allReportDates = allReportDates.filter((d) => d.getTime() <= cap.getTime());
+  }
+  const latestReportDate = allReportDates.length > 0 ? allReportDates[0] : null;
+  if (!latestReportDate) return null;
+  const latestPropUnitDetails = allPropRecords.filter((r) => {
+    const reportDate = reportDateFromPortfolioRow(r);
+    return reportDate && reportDate.getTime() === latestReportDate.getTime();
+  });
+  const unitMap = new Map<string, Record<string, unknown>>();
+  const unitsWithoutId: Record<string, unknown>[] = [];
+  let rowIndex = 0;
+  for (const r of latestPropUnitDetails) {
+    const row = r as Record<string, unknown>;
+    const unitNum = (row.UnitNumber ?? row['Unit #'] ?? '').toString().trim();
+    const unitDesignation = (row.UnitDesignation ?? row['Unit Designation'] ?? '').toString().trim();
+    const plan = normPlan(row.FloorPlan ?? row['Floor Plan'] ?? '');
+    const unitKey = `${plan}-${(unitNum || unitDesignation || '').toLowerCase()}`;
+    if (!unitNum && !unitDesignation) {
+      unitsWithoutId.push({ ...row, _rowIndex: rowIndex });
+      rowIndex++;
+      continue;
+    }
+    const existing = unitMap.get(unitKey);
+    if (!existing) {
+      unitMap.set(unitKey, row);
+    } else {
+      const existingStatus = (existing.UnitLeaseStatus ?? existing['Unit/Lease Status'] ?? '').toString();
+      const currentStatus = (row.UnitLeaseStatus ?? row['Unit/Lease Status'] ?? '').toString();
+      const existingPriority = getStatusPriorityForDedup(existingStatus);
+      const currentPriority = getStatusPriorityForDedup(currentStatus);
+      if (currentPriority < existingPriority) {
+        unitMap.set(unitKey, row);
+      } else if (existingPriority === currentPriority) {
+        const existingDate = parseDate(existing.ReportDate ?? existing.reportDate);
+        const currentDate = parseDate(row.ReportDate ?? row.reportDate);
+        if (currentDate && (!existingDate || currentDate > existingDate)) unitMap.set(unitKey, row);
+      }
+    }
+  }
+  const deduplicatedUnits = Array.from(unitMap.values()).concat(unitsWithoutId);
+  const totalUnits = deduplicatedUnits.length;
+  const unitKeysWithApplicantRow = new Set<string>();
+  for (const r of latestPropUnitDetails) {
+    const row = r as Record<string, unknown>;
+    const status = (row.UnitLeaseStatus ?? row['Unit/Lease Status'] ?? '').toString().toLowerCase();
+    if (status.includes('applicant') || status.includes('applied')) {
+      const uk = unitKeyFromRow(row);
+      if (uk && ((row.UnitNumber ?? row['Unit #'] ?? '').toString().trim() || (row.UnitDesignation ?? row['Unit Designation'] ?? '').toString().trim()))
+        unitKeysWithApplicantRow.add(uk);
+    }
+  }
+  const currentOccupied = deduplicatedUnits.filter((r) =>
+    isOccupiedBoxscoreLogic(r as Record<string, unknown>, latestReportDate, { unitKeysWithApplicantRow })
+  ).length;
+  const occupiedUnitKeys = new Set<string>();
+  for (const r of deduplicatedUnits) {
+    const row = r as Record<string, unknown>;
+    const uk = unitKeyFromRow(row);
+    if (uk && isOccupiedBoxscoreLogic(row, latestReportDate, { unitKeysWithApplicantRow })) occupiedUnitKeys.add(uk);
+  }
+
+  // Same as app.js: use actual "today" for projection window (not latestReportDate)
+  const today = asOf
+    ? new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate(), 0, 0, 0, 0)
+    : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+  let projectionEnd: Date;
+  if (lookaheadEndDate != null) {
+    const end = typeof lookaheadEndDate === 'string' ? parseDate(lookaheadEndDate) : lookaheadEndDate;
+    projectionEnd = end ? new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0, 0) : new Date(today.getTime() + lookaheadWeeks * 7 * 24 * 60 * 60 * 1000);
+    if (projectionEnd.getTime() < today.getTime()) projectionEnd = new Date(today);
+  } else {
+    projectionEnd = new Date(today);
+    projectionEnd.setDate(projectionEnd.getDate() + lookaheadWeeks * 7);
+  }
+  const todayMs = today.getTime();
+  const projectionEndMs = projectionEnd.getTime();
+  const inWindow = (d: Date) => {
+    const ms = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+    return ms >= todayMs && ms <= projectionEndMs;
+  };
+
+  // Latest status per unit (for isNewLease: unit not currently occupied)
+  const latestStatusByUnit = new Map<string, string>();
+  for (const r of deduplicatedUnits) {
+    const row = r as Record<string, unknown>;
+    const uk = unitKeyFromRow(row);
+    if (uk) latestStatusByUnit.set(uk, (row.UnitLeaseStatus ?? row['Unit/Lease Status'] ?? '').toString().trim().toLowerCase());
+  }
+  for (const r of allPropRecords) {
+    const uk = unitKeyFromRow(r);
+    if (uk && !latestStatusByUnit.has(uk))
+      latestStatusByUnit.set(uk, (r.UnitLeaseStatus ?? r['Unit/Lease Status'] ?? '').toString().trim().toLowerCase());
+  }
+  const isCurrentlyOccupied = (status: string) =>
+    !!status &&
+    !status.includes('vacant') &&
+    !status.includes('model') &&
+    !status.includes('admin') &&
+    !status.includes('corporate') &&
+    !status.includes('free') &&
+    !status.includes('down') &&
+    !status.includes('applicant');
+
+  // Move-ins: Lease Start or Move In in [today, projectionEnd]; one per unit; isNewLease = !isCurrentlyOccupied(latestStatus)
+  const moveInsMap = new Map<string, { isNewLease: boolean }>();
+  for (const r of allPropRecords) {
+    const uk = unitKeyFromRow(r);
+    if (!uk) continue;
+    const leaseStart = getLeaseStartDate(r);
+    if (leaseStart && inWindow(leaseStart) && !moveInsMap.has(uk)) {
+      const status = latestStatusByUnit.get(uk) ?? '';
+      const isNewLease = !isCurrentlyOccupied(status);
+      moveInsMap.set(uk, { isNewLease });
+    }
+  }
+  for (const r of allPropRecords) {
+    const uk = unitKeyFromRow(r);
+    if (!uk || moveInsMap.has(uk)) continue;
+    const moveIn = parseDate(r.MoveIn ?? r['Move In'] ?? r['Move In ']);
+    if (moveIn && inWindow(moveIn)) {
+      const status = latestStatusByUnit.get(uk) ?? '';
+      const isNewLease = !isCurrentlyOccupied(status);
+      moveInsMap.set(uk, { isNewLease });
+    }
+  }
+
+  // Notices: occupied units with Notice date in [today, projectionEnd]
+  const noticesMap = new Map<string, unknown>();
+  const moveOutsMap = new Map<string, unknown>();
+  for (const uk of occupiedUnitKeys) {
+    for (const r of allPropRecords) {
+      if (unitKeyFromRow(r) !== uk) continue;
+      const noticeDate = getNoticeDate(r);
+      if (noticeDate && inWindow(noticeDate) && !noticesMap.has(uk)) {
+        noticesMap.set(uk, {});
+        break;
+      }
+    }
+    if (noticesMap.has(uk)) continue;
+    for (const r of allPropRecords) {
+      if (unitKeyFromRow(r) !== uk) continue;
+      const moveOut = parseDate(r.MoveOut ?? r['Move Out'] ?? r['Move-Out']);
+      if (moveOut && inWindow(moveOut)) {
+        moveOutsMap.set(uk, {});
+        break;
+      }
+    }
+  }
+
+  // Turnovers: units with both move-in and (notice or move-out) in period — wash out
+  const unitsWithBoth = new Set<string>();
+  for (const uk of moveInsMap.keys()) {
+    if (noticesMap.has(uk) || moveOutsMap.has(uk)) unitsWithBoth.add(uk);
+  }
+  const netMoveIns = Array.from(moveInsMap.entries()).filter(([uk]) => !unitsWithBoth.has(uk));
+  const newLeaseMoveIns = netMoveIns.filter(([, v]) => v.isNewLease);
+  const netNotices = Array.from(noticesMap.keys()).filter((uk) => !unitsWithBoth.has(uk));
+  // Notices without a lease start in period = net notices (turnovers already excluded)
+  const noticesWithoutLeaseStartsCount = netNotices.length;
+
+  // app.js formula: currentOccupied + newLeaseMoveIns - noticesWithoutLeaseStarts
+  const projectedOccupied = currentOccupied + newLeaseMoveIns.length - noticesWithoutLeaseStartsCount;
+  const lookaheadOccupied = Math.max(0, Math.min(totalUnits, projectedOccupied));
+  const lookaheadOccPct = totalUnits > 0 ? Math.round((lookaheadOccupied / totalUnits) * 10000) / 100 : null;
+
+  if (process.env.DEBUG_LOOKAHEAD === '1' || process.env.DEBUG_LOOKAHEAD === 'true') {
+    const norm = (s: string) => (s ?? '').toUpperCase();
+    if (norm(prop).includes('MILLERVILLE')) {
+      console.log('[DEBUG_LOOKAHEAD] Millerville (app.js rules)', {
+        today: today.toISOString().slice(0, 10),
+        projectionEnd: projectionEnd.toISOString().slice(0, 10),
+        totalUnits,
+        currentOccupied,
+        newLeaseMoveIns: newLeaseMoveIns.length,
+        noticesWithoutLeaseStarts: noticesWithoutLeaseStartsCount,
+        washed: unitsWithBoth.size,
+        projectedOccupied,
+        lookaheadOccupied,
+        lookaheadOccPct,
+        target: 89.0,
+      });
+    }
+  }
+  return { lookaheadOccupied, lookaheadOccPct, totalUnits, currentOccupied };
+}
+
+/**
+ * RealPage BOXSCORE controllable availability.
+ * Source: app.js calculateAvailableUnitsFromDetails. Available = Net Exposure - Model/Admin - Down; Net Exposure = (Total Vacant - Vacant Leased) + (Occupied On Notice - Occupied On Notice Preleased).
  */
 function getAvailableUnitsFromDetails(
   prop: string,
@@ -400,7 +664,7 @@ function getAvailableUnitsFromDetails(
   return { availableUnits: Math.max(0, availableUnits), totalUnitsFromDetails };
 }
 
-/** Base plan type for weighted avg rent (exact port from app.js getBasePlanType). */
+/** Base plan type for weighted avg rent. Source: app.js getBasePlanType. */
 function getBasePlanType(planName: string): string {
   if (!planName) return '';
   const str = planName.toString().trim().toUpperCase();
@@ -415,8 +679,8 @@ function getBasePlanType(planName: string): string {
 }
 
 /**
- * Avg Leased Rent (weighted by base plan) – exact port from app.js weightedOccupiedAvgRent.
- * LEASED units only (No NTV + NTV-L), exclude NTV-NL; same dedupe as boxscore; LeaseRent.
+ * Avg leased rent (weighted by base plan).
+ * Source: app.js weightedOccupiedAvgRent. LEASED units only (No NTV + NTV-L), exclude NTV-NL; same dedupe as boxscore; LeaseRent.
  */
 function getWeightedOccupiedAvgRent(
   prop: string,
@@ -548,7 +812,7 @@ export interface PortfolioKpis {
   latestReportDate: string | null;
 }
 
-/** Build velocity (7d/28d) from leasing rows – latest row per property by date. */
+/** Velocity (7d/28d) from leasing dataset – latest row per property by date. Source: app.js uses same leasing fields (7DayLeasingVelocity, 28DayLeasingVelocity, MonthOf). */
 function getVelocityFromLeasing(
   leasing: Record<string, unknown>[],
   propertyFilter?: string
@@ -580,7 +844,7 @@ function getVelocityFromLeasing(
   return { byProperty, portfolio7d, portfolio28d };
 }
 
-/** LeasesNeeded (available to lease) from leasing rows – latest row per property by date. Used so dashboard matches leasing dataset. */
+/** LeasesNeeded from leasing dataset – latest row per property by date. Source: app.js same leasing fields (LeasesNeeded, MonthOf). */
 function getLeasesNeededFromLeasing(
   leasing: Record<string, unknown>[],
   propertyFilter?: string
@@ -606,7 +870,7 @@ function getLeasesNeededFromLeasing(
   return byProperty;
 }
 
-/** Lease type from row (same candidates as frontend getRawLeaseTypeFromRow / normalizeLeaseType). */
+/** Lease type from row. Source: app.js getRawLeaseTypeFromRow / normalizeLeaseType (Lease Type, Current Lease Type, UnitLeaseStatus pending renewal). */
 function getLeaseTypeFromRow(r: Record<string, unknown>): 'New' | 'Renewal' | null {
   const raw =
     (r.LeaseType ?? r['Lease Type'] ?? r['Current Lease Type'] ?? r.CurrentLeaseType ?? r['Lease Type (Current)'] ?? '')
@@ -625,7 +889,7 @@ function getLeaseTypeFromRow(r: Record<string, unknown>): 'New' | 'Renewal' | nu
 
 /**
  * Velocity from portfolio unit details (app-signed date, New/Renewal by lease type).
- * Matches frontend calculateVelocityFromUnitDetails: app date only, 7-day = [refDate-7, refDate], 28-day = [refDate-27, refDate].
+ * Source: app.js calculateVelocityFromUnitDetails (AppSignedDate, 7-day = [refDate-7, refDate], 28-day = [refDate-27, refDate]).
  */
 function getVelocityFromPortfolioUnitDetails(
   prop: string,
@@ -752,9 +1016,8 @@ function getVelocityFromPortfolioUnitDetails(
 }
 
 /**
- * Occupancy/leased from Unit Mix (RealPage – same definition as frontend app.js).
- * Most recent ReportDate only; dedupe by PropertyName|UnitType|FloorPlan.
- * Per property: totalUnits = sum(TotalUnits), occupied = sum(TotalUnits * PercentOccupied/100), leased = sum(TotalUnits * percentLeased/100).
+ * Occupancy/leased from Domo Unit Mix report (same dataset as app.js unitmix).
+ * Source: app.js unit mix usage (PropertyName, UnitType, FloorPlan, TotalUnits, PercentOccupied, percentLeased, ReportDate). Latest report date; dedupe by PropertyName|UnitType|FloorPlan; per property sum TotalUnits and weighted occupied/leased.
  */
 function getOccupancyFromUnitMix(
   unitmixRows: Record<string, unknown>[],
@@ -819,7 +1082,7 @@ function getOccupancyFromUnitMix(
   return { byProperty: byCanonical };
 }
 
-/** Delta to budget = current occupied - budgeted occupancy target. Uses leasing row LeasesNeeded when present (delta), else occupied - (total * budgetPct) from unit mix. */
+/** Delta to budget from leasing dataset. Source: app.js uses LeasesNeeded (and budgeted occupancy); delta = -LeasesNeeded when present, else occupied - budget target. */
 function getDeltaToBudgetFromLeasing(
   leasing: Record<string, unknown>[],
   occupiedByProperty: Record<string, number>,
@@ -863,9 +1126,15 @@ export function buildKpis(
     mmrBudgetedOcc?: Record<string, number>;
     mmrBudgetedOccPct?: Record<string, number>;
     mmrCurrentLeasedPct?: Record<string, number>;
+    /** Lookahead window in weeks (used when lookaheadEndDate not set). */
+    lookaheadWeeks?: number;
+    /** Fixed lookahead end date (e.g. "2025-03-12") to match RealPage "on 3/12 occupancy will be 89.0%". */
+    lookaheadEndDate?: string;
   }
 ): PortfolioKpis {
   const asOfDate = options?.asOf ? parseDate(options.asOf) ?? undefined : undefined;
+  const lookaheadWeeks = options?.lookaheadWeeks ?? 4;
+  const lookaheadEndDate = options?.lookaheadEndDate ?? undefined;
   const propertyFilter = options?.property?.trim() || undefined;
   const pud = raw.portfolioUnitDetails ?? [];
   const leasing = raw.leasing ?? [];
@@ -975,12 +1244,19 @@ export function buildKpis(
     let leas = usePud ? occResult.leased : (um ? Math.round(um.leased) : 0);
     const displayKey = displayKeyByCanonical[prop] ?? prop;
     const propKeyNorm = (prop ?? '').toString().trim().replace(/\*/g, '').toUpperCase();
-    // Prefer MMR occupancy % when available (matches app.js: occupancy from MMR as source of truth)
-    const mmrOccVal = mmrOcc[displayKey] ?? mmrOcc[prop] ?? mmrOcc[propKeyNorm] ?? null;
+    // Prefer lookahead occupancy (current + move-ins - move-outs to lookaheadEndDate or +N weeks) to match RealPage (e.g. Millerville 89.0% on 3/12)
+    const lookahead = pud.length > 0 ? getLookaheadOccupancyForProperty(prop, pud, asOfDate, lookaheadWeeks, lookaheadEndDate) : null;
     let occPct: number | null = tot > 0 ? Math.round((occ / tot) * 10000) / 100 : null;
-    if (mmrOccVal != null) {
-      occPct = mmrOccVal <= 1 ? Math.round(mmrOccVal * 10000) / 100 : Math.round(mmrOccVal * 100) / 100;
-      if (tot > 0) occ = Math.round((occPct / 100) * tot);
+    if (lookahead?.lookaheadOccPct != null && tot > 0) {
+      occPct = lookahead.lookaheadOccPct;
+      occ = Math.round((occPct / 100) * tot);
+    } else {
+      // Fallback: MMR occupancy % when available (matches app.js: occupancy from MMR as source of truth)
+      const mmrOccVal = mmrOcc[displayKey] ?? mmrOcc[prop] ?? mmrOcc[propKeyNorm] ?? null;
+      if (mmrOccVal != null) {
+        occPct = mmrOccVal <= 1 ? Math.round(mmrOccVal * 10000) / 100 : Math.round(mmrOccVal * 100) / 100;
+        if (tot > 0) occ = Math.round((occPct / 100) * tot);
+      }
     }
     // Prefer MMR current leased % when available (matches app.js currentLeasedMap)
     const mmrLeasedVal = mmrCurrentLeasedPct[displayKey] ?? mmrCurrentLeasedPct[prop] ?? mmrCurrentLeasedPct[propKeyNorm] ?? null;
@@ -1012,6 +1288,7 @@ export function buildKpis(
       leases7d: vel.leases7d,
       leases28d: vel.leases28d,
       deltaToBudget: d,
+      projectedOccupancy4WeeksPct: lookahead?.lookaheadOccPct ?? null,
       velocityBreakdown:
         velPud != null
           ? {
@@ -1026,6 +1303,8 @@ export function buildKpis(
 
   // Recompute portfolio available from byProperty so it matches sum of (leasing LeasesNeeded when present)
   available = Object.values(byProperty).reduce((s, p) => s + (p.available ?? 0), 0);
+  // Recompute portfolio occupied from byProperty so it matches lookahead-derived occupancy when used
+  occupied = Object.values(byProperty).reduce((s, p) => s + (p.occupied ?? 0), 0);
 
   const latestReportDate =
     pud.length > 0

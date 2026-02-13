@@ -1002,7 +1002,18 @@ export async function buildDashboardFromRaw(
   // PUD: deduplicate by (building/property name, unit number), most recent report date only
   const pudFiltered = filterPortfolioUnitDetailsToMostRecentReportDateDedupeByUnit(raw.portfolioUnitDetails ?? []);
   const rawWithDedupedPud = { ...raw, portfolioUnitDetails: pudFiltered };
-  const kpis = buildKpis(rawWithDedupedPud, { mmrOcc, mmrBudgetedOcc, mmrBudgetedOccPct, mmrCurrentLeasedPct });
+  // Lookahead to next March 12 to match RealPage "on 3/12 occupancy will be 89.0%" (e.g. Millerville)
+  const now = new Date();
+  const year = now.getFullYear();
+  const march12 = new Date(year, 2, 12); // month 2 = March
+  const lookaheadEndDate = now <= march12 ? `${year}-03-12` : `${year + 1}-03-12`;
+  const kpis = buildKpis(rawWithDedupedPud, {
+    mmrOcc,
+    mmrBudgetedOcc,
+    mmrBudgetedOccPct,
+    mmrCurrentLeasedPct,
+    lookaheadEndDate,
+  });
 
   // rows: leasing filtered to most recent report DATE from portfolioUnitDetails, deduped by property, Lease Up/Stabilized only
   const reportDayKeyFromPud = getMostRecentReportDayKeyFromPud(raw.portfolioUnitDetails ?? []);

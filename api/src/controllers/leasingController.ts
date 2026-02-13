@@ -806,9 +806,10 @@ export async function rebuildDashboardSnapshot(): Promise<void> {
 export const getDashboard = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const asOf = typeof req.query.asOf === 'string' ? req.query.asOf : undefined;
+    const skipSnapshot = req.query.rebuild === '1' || req.query.rebuild === 'true';
     const t0 = Date.now();
-    console.log('[leasing/dashboard] GET start');
-    const snapshot = await getDashboardSnapshot();
+    console.log('[leasing/dashboard] GET start', skipSnapshot ? '(rebuild=1)' : '');
+    const snapshot = skipSnapshot ? null : await getDashboardSnapshot();
     console.log('[leasing/dashboard] snapshot fetch', Date.now() - t0, 'ms', snapshot?.payload ? 'hit' : 'miss');
     if (snapshot?.payload) {
       const payload = snapshot.payload;
