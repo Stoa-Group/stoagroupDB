@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run every 30 min: call sync-check first; only run full sync when Domo actually changed. When no changes, rebuild snapshot.
+# Run every 30 min: trigger sync-from-domo (async), wait 2 min, then rebuild snapshot. Keeps dashboard up to date.
 # Usage: set API_BASE_URL and optionally LEASING_SYNC_WEBHOOK_SECRET (env or .env), then:
 #   ./scripts/cron-leasing-sync.sh
 # Crontab: */30 * * * * /path/to/stoagroupDB/scripts/cron-leasing-sync.sh
@@ -17,36 +17,31 @@ fi
 
 API_BASE_URL="${API_BASE_URL:-}"
 SECRET="${LEASING_SYNC_WEBHOOK_SECRET:-}"
+WAIT_SEC="${LEASING_CRON_WAIT_AFTER_SYNC_MS:-120000}"
+WAIT_SEC=$((WAIT_SEC / 1000))
 if [ -z "$API_BASE_URL" ]; then
   echo "API_BASE_URL not set" >&2
   exit 1
 fi
 
 BASE="${API_BASE_URL%/}"
-CHECK_URL="$BASE/api/leasing/sync-check"
 SYNC_URL="$BASE/api/leasing/sync-from-domo"
 REBUILD_URL="$BASE/api/leasing/rebuild-snapshot"
 
-# Check for changes (lightweight: Domo metadata vs last sync)
+echo "Triggering sync-from-domo (async)..."
 if [ -n "$SECRET" ]; then
-  CHECK_RESULT=$(curl -sS -H "X-Sync-Secret: $SECRET" "$CHECK_URL")
+  curl -sS -X POST -H "Content-Type: application/json" -H "X-Sync-Secret: $SECRET" -m 90 "${SYNC_URL}?async=true" || true
 else
-  CHECK_RESULT=$(curl -sS "$CHECK_URL")
-fi
-if ! echo "$CHECK_RESULT" | grep -q '"changes":true'; then
-  echo "No Domo changes; skipping full sync. Rebuilding snapshot from current DB..."
-  if [ -n "$SECRET" ]; then
-    curl -sS -X POST -H "Content-Type: application/json" -H "X-Sync-Secret: $SECRET" "$REBUILD_URL" || true
-  else
-    curl -sS -X POST -H "Content-Type: application/json" "$REBUILD_URL" || true
-  fi
-  exit 0
+  curl -sS -X POST -H "Content-Type: application/json" -m 90 "${SYNC_URL}?async=true" || true
 fi
 
-echo "Domo changes detected; starting sync-from-domo (async)..."
-# Use ?async=true so the API returns 202 immediately and runs sync in background (avoids 502 timeout)
+echo "Waiting ${WAIT_SEC}s for sync to finish..."
+sleep "$WAIT_SEC"
+
+echo "Rebuilding snapshot..."
 if [ -n "$SECRET" ]; then
-  curl -sS -X POST -H "Content-Type: application/json" -H "X-Sync-Secret: $SECRET" "${SYNC_URL}?async=true"
+  curl -sS -X POST -H "Content-Type: application/json" -H "X-Sync-Secret: $SECRET" -m 180 "$REBUILD_URL" || exit 1
 else
-  curl -sS -X POST -H "Content-Type: application/json" "${SYNC_URL}?async=true"
+  curl -sS -X POST -H "Content-Type: application/json" -m 180 "$REBUILD_URL" || exit 1
 fi
+echo "Done."

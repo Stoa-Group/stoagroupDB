@@ -45,7 +45,7 @@ Sync can run automatically in two ways: **on a schedule** or **when Domo data is
    API_BASE_URL=http://localhost:3000 node scripts/cron-leasing-sync-node.js
    ```
 
-6. **Force dashboard snapshot rebuild**: The dashboard is served from a prebuilt snapshot (so GET /api/leasing/dashboard is fast). The snapshot is rebuilt automatically after every sync-from-domo and, when the cron skips sync (no Domo changes), the cron still calls rebuild-snapshot so the snapshot stays current. To **force** a rebuild on demand (e.g. after deploy or to pick up new logic):
+6. **Force dashboard snapshot rebuild**: The dashboard is served from a prebuilt snapshot (so GET /api/leasing/dashboard is fast). The cron runs sync-from-domo (async), waits 2 minutes, then rebuilds the snapshot every run so the snapshot stays current. To **force** a rebuild on demand (e.g. after deploy or to pick up new logic):
    ```bash
    curl -sS -X POST https://YOUR_RENDER_URL/api/leasing/rebuild-snapshot \
      -H "Content-Type: application/json" \
