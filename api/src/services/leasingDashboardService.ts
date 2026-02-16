@@ -1063,6 +1063,28 @@ export async function buildDashboardFromRaw(
     );
   }
 
+  // When leasingTS is empty (no raw.leasing history), fill one point per property from current rows so velocity chart has data
+  if (Object.keys(leasingTS).length === 0 && rows.length > 0) {
+    const today = new Date().toISOString().slice(0, 10);
+    for (const r of rows) {
+      const prop = normProp(r.Property ?? r.property ?? '');
+      if (!prop) continue;
+      const xDate = parseDate(r.MonthOf ?? r.BatchTimestamp ?? r.ReportDate);
+      const x = xDate ? xDate.toISOString().slice(0, 10) : today;
+      const v7Val = num(r['7DayLeasingVelocity'] ?? r.LeasingVelocity7Day);
+      const v28Val = num(r['28DayLeasingVelocity'] ?? r.LeasingVelocity28Day);
+      const unitsTotal = num(r.Units ?? r.TotalUnits) ?? 0;
+      if (!leasingTS[prop]) (leasingTS as Record<string, unknown[]>)[prop] = [];
+      (leasingTS as Record<string, Array<{ x: string; v7: number | null; v28: number | null; occPct: null; unitsTotal: number }>>)[prop].push({
+        x,
+        occPct: null,
+        v7: v7Val,
+        v28: v28Val,
+        unitsTotal,
+      });
+    }
+  }
+
   // Add display-name keys so frontend can look up by Property as shown in UI (e.g. "The Waters at Millerville")
   addDisplayNameKeysToPayloadMaps(rows, unitmixStruct, utradeIndex, leasingTS);
 

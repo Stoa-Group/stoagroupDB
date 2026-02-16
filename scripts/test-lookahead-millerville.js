@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Fetch dashboard from API and print Millerville (and all props) occupancy for lookahead tuning.
- * Target: Millerville occupancy ~89.0% (lookahead to 3/12), current ~90.2%.
+ * Targets below = Units Occupied / Leased Units from Monthly Leasing Report (Executive KPI). Update when report numbers change.
  *
  * Usage:
  *   node scripts/test-lookahead-millerville.js
@@ -34,13 +34,14 @@ async function main() {
   const kpis = dashboard.kpis && dashboard.kpis.byProperty ? dashboard.kpis.byProperty : {};
   const keys = Object.keys(kpis).filter((k) => !k.startsWith('THE ')); // prefer display names
 
+  // Occupied / Leased from Occupancy + Leasing dashboards (Current Occupancy % × Total Units, Current Leased % × Total Units)
   const targets = [
-    { name: 'Millerville', occ: 266, leas: 259 },
-    { name: 'Picardy', occ: 151, leas: 153 },
-    { name: 'Bluebonnet', occ: 292, leas: 294 },
-    { name: 'Crestview', occ: 155, leas: 162 },
-    { name: 'McGowin', occ: 129, leas: 133 },
-    { name: 'Redstone', occ: 206, leas: 202 },
+    { name: 'Millerville', occ: 265, leas: 257 },   // The Waters at Millerville — 89.8% occ, 87.1% leased
+    { name: 'Picardy', occ: 152, leas: 151 },      // The Heights at Picardy — 65.5% occ, 65.1% leased
+    { name: 'Bluebonnet', occ: 293, leas: 291 },   // The Waters at Bluebonnet — 90.4% occ, 89.8% leased
+    { name: 'Crestview', occ: 160, leas: 161 },    // The Waters at Crestview — 55.6% occ, 55.9% leased
+    { name: 'McGowin', occ: 129, leas: 132 },      // The Waters at McGowin — 51.2% occ, 52.4% leased
+    { name: 'Redstone', occ: 204, leas: 197 },     // The Waters at Redstone — 85.0% occ, 82.1% leased
   ];
   console.log('\n--- Target check: occupied / leased ---');
   let allOk = true;

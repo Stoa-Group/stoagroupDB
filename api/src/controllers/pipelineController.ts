@@ -2398,11 +2398,16 @@ export const updateDealPipeline = async (req: Request, res: Response, next: Next
 
     if (fields.length > 0) {
       fields.push('UpdatedAt = SYSDATETIME()');
-      await request.query(`
+      const updateResult = await request.query(`
         UPDATE pipeline.DealPipeline
         SET ${fields.join(', ')}
         WHERE DealPipelineId = @id
       `);
+      const rowsUpdated = (updateResult && Array.isArray(updateResult.rowsAffected) && updateResult.rowsAffected[0]) ? updateResult.rowsAffected[0] : 0;
+      if (rowsUpdated === 0) {
+        res.status(404).json({ success: false, error: { message: 'No deal pipeline record was updated (DealPipelineId may be invalid or record not found).' } });
+        return;
+      }
     }
 
     // Get the updated record with CORE data
