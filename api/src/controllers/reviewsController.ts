@@ -312,6 +312,52 @@ export const bulkUpsertReviews = async (req: Request, res: Response, next: NextF
   }
 };
 
+const NORMALIZE_PROPERTY = `LTRIM(RTRIM(LOWER(ISNULL(Property, N''))))`;
+const NORMALIZE_REVIEWER = `LTRIM(RTRIM(LOWER(ISNULL(reviewer_name, N''))))`;
+const DEDUPE_ORDER_BY = `
+  COALESCE(scraped_at, CAST('1900-01-01' AS DATETIME2)) DESC,
+  COALESCE(CAST(review_date AS DATETIME2), CAST('1900-01-01' AS DATETIME2)) DESC,
+  COALESCE(CreatedAt, CAST('1900-01-01' AS DATETIME2)) DESC,
+  ReviewId DESC
+`;
+
+/**
+ * POST /api/reviews/deduplicate
+ * Remove duplicate reviews by Property+reviewer (normalized), keeping most recent.
+ * Called by scraper workflow after each run. Requires header X-Dedupe-Secret matching STOA_DB_DEDUPE_SECRET.
+ */
+export const deduplicateReviews = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const secret = req.headers['x-dedupe-secret'] ?? req.headers['X-Dedupe-Secret'];
+    const expected = process.env.STOA_DB_DEDUPE_SECRET;
+    if (!expected || expected !== secret) {
+      res.status(401).json({ success: false, error: { message: 'Unauthorized' } });
+      return;
+    }
+    const pool = await getConnection();
+    const deleteSql = `
+;WITH Ranked AS (
+  SELECT
+    ReviewId,
+    ROW_NUMBER() OVER (
+      PARTITION BY ${NORMALIZE_PROPERTY}, ${NORMALIZE_REVIEWER}
+      ORDER BY ${DEDUPE_ORDER_BY}
+    ) AS rn
+  FROM reviews.Review
+)
+DELETE r
+FROM reviews.Review r
+INNER JOIN Ranked rk ON r.ReviewId = rk.ReviewId
+WHERE rk.rn > 1
+`;
+    const result = await pool.request().query(deleteSql);
+    const rowsAffected = result.rowsAffected[0] ?? 0;
+    res.json({ success: true, data: { deleted: rowsAffected } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * GET /api/reviews/config/daily-alert-list
  * List recipients for the marketing daily alert email. Joins to core.Person when PersonId is set.

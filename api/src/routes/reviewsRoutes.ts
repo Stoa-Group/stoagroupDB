@@ -24,4 +24,7 @@ router.post('/seed-property-urls', authenticate, reviewsController.seedPropertyU
 // Bulk upsert reviews (scraper)
 router.post('/bulk', reviewsController.bulkUpsertReviews);
 
+// Deduplicate by Property+reviewer (scraper workflow; requires X-Dedupe-Secret header)
+router.post('/deduplicate', reviewsController.deduplicateReviews);
+
 export default router;
