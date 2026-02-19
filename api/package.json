@@ -48,6 +48,7 @@
     "db:fix-review-dates": "npx ts-node --transpile-only scripts/fix-review-dates.ts",
     "db:fix-misattributed-review": "npx ts-node --transpile-only scripts/fix-misattributed-review.ts",
     "db:create-admin-user": "npx ts-node --transpile-only scripts/create-admin-user.ts",
+    "db:add-deal-pipeline-admins": "npx ts-node --transpile-only scripts/add-deal-pipeline-admins.ts",
     "db:update-holdco-stage": "npx ts-node --transpile-only scripts/update-holdco-stage.ts",
     "db:add-is-completed-to-covenants": "npx ts-node --transpile-only scripts/add-is-completed-to-covenants.ts",
     "db:test-covenants": "npx ts-node --transpile-only scripts/test-covenants.ts",

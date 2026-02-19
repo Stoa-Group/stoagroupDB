@@ -1,8 +1,13 @@
 import { Router } from 'express';
 import * as pipelineController from '../controllers/pipelineController';
 import { dealPipelineAttachmentUpload } from '../middleware/uploadMiddleware';
+import { authenticate } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// Presence (who's viewing the Deal Pipeline – only when authenticated)
+router.post('/presence', authenticate, pipelineController.reportDealPipelinePresence);
+router.get('/presence', authenticate, pipelineController.getDealPipelinePresence);
 
 // Under Contract routes (Land Development)
 router.get('/under-contracts', pipelineController.getAllUnderContracts);

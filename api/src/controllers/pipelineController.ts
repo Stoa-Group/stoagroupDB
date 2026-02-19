@@ -33,6 +33,60 @@ function toDateOnlyString(value: string | Date | null | undefined): string | nul
 }
 
 // ============================================================
+// PRESENCE (who's viewing the Deal Pipeline – in-memory, TTL 2 min)
+// ============================================================
+const PRESENCE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const dealPipelinePresenceStore = new Map<string, { userId: number; userName: string; email: string; lastSeen: Date }>();
+
+function pruneDealPipelinePresence(): void {
+  const now = Date.now();
+  for (const [key, entry] of dealPipelinePresenceStore.entries()) {
+    if (now - entry.lastSeen.getTime() > PRESENCE_TTL_MS) dealPipelinePresenceStore.delete(key);
+  }
+}
+
+export const reportDealPipelinePresence = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ success: false, error: { message: 'Not authenticated' } });
+      return;
+    }
+    const body = req.body || {};
+    const key = String(user.userId);
+    const userName = body.userName != null ? String(body.userName) : (user.username || '');
+    const email = body.email != null ? String(body.email) : (user.email || '');
+    dealPipelinePresenceStore.set(key, {
+      userId: user.userId,
+      userName: userName || String(user.userId),
+      email,
+      lastSeen: new Date()
+    });
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getDealPipelinePresence = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    pruneDealPipelinePresence();
+    const now = Date.now();
+    const users = Array.from(dealPipelinePresenceStore.values())
+      .filter((e) => now - e.lastSeen.getTime() <= PRESENCE_TTL_MS)
+      .map((e) => ({
+        userId: e.userId,
+        userName: e.userName,
+        email: e.email,
+        lastSeen: e.lastSeen.toISOString()
+      }));
+    res.json({ success: true, data: { users } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================================
 // UNDER CONTRACT CONTROLLER
 // ============================================================
 
