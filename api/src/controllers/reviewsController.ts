@@ -305,8 +305,9 @@ function normalizeRequestTimestamp(value: unknown): Date | null {
 
 /**
  * POST /api/reviews/bulk
- * Upsert reviews (scraper). Dedupe by same Property+reviewer_name+review_date_original+text; duplicates are skipped.
- * Body: { reviews: [ { Property, Review_Text, rating, reviewer_name, review_date, review_date_original, scraped_at, source, extraction_method, property_url, category, sentiment, common_phrase, review_year, review_month, review_month_name, review_day_of_week, Location, Total_Units, Birth_Order, Rank, request_ip, request_timestamp?, ProjectId? }, ... ] }
+ * Insert reviews (scraper). Skips any review where Property+reviewer_name already exists—
+ * never creates duplicates, never overwrites. Existing dates and data are preserved.
+ * Body: { reviews: [ { Property, Review_Text, rating, reviewer_name, ... }, ... ] }
  */
 export const bulkUpsertReviews = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -320,6 +321,21 @@ export const bulkUpsertReviews = async (req: Request, res: Response, next: NextF
     let skipped = 0;
     for (const r of reviews) {
       try {
+        const propNorm = (r.Property ?? '').toString().trim().toLowerCase();
+        const revNorm = (r.reviewer_name ?? '').toString().trim().toLowerCase();
+        const exists = await pool.request()
+          .input('PropertyNorm', sql.NVarChar, propNorm)
+          .input('ReviewerNorm', sql.NVarChar, revNorm)
+          .query(`
+            SELECT 1 AS Exists
+            FROM reviews.Review
+            WHERE LTRIM(RTRIM(LOWER(ISNULL(Property, N'')))) = @PropertyNorm
+              AND LTRIM(RTRIM(LOWER(ISNULL(reviewer_name, N'')))) = @ReviewerNorm
+          `);
+        if (exists.recordset?.length > 0) {
+          skipped++;
+          continue;
+        }
         const reviewDate = normalizeReviewDate(r);
         const requestTimestamp = normalizeRequestTimestamp(r.request_timestamp);
         await pool.request()
@@ -379,16 +395,15 @@ export const bulkUpsertReviews = async (req: Request, res: Response, next: NextF
 
 const NORMALIZE_PROPERTY = `LTRIM(RTRIM(LOWER(ISNULL(Property, N''))))`;
 const NORMALIZE_REVIEWER = `LTRIM(RTRIM(LOWER(ISNULL(reviewer_name, N''))))`;
+/** Keep oldest (first recorded)—preserve original dates, never overwrite. */
 const DEDUPE_ORDER_BY = `
-  COALESCE(scraped_at, CAST('1900-01-01' AS DATETIME2)) DESC,
-  COALESCE(CAST(review_date AS DATETIME2), CAST('1900-01-01' AS DATETIME2)) DESC,
-  COALESCE(CreatedAt, CAST('1900-01-01' AS DATETIME2)) DESC,
-  ReviewId DESC
+  COALESCE(scraped_at, CreatedAt) ASC,
+  ReviewId ASC
 `;
 
 /**
  * POST /api/reviews/deduplicate
- * Remove duplicate reviews by Property+reviewer (normalized), keeping most recent.
+ * Remove duplicate reviews by Property+reviewer (normalized), keeping the oldest (first recorded). Preserves dates.
  * Called by scraper workflow after each run. Requires header X-Dedupe-Secret matching STOA_DB_DEDUPE_SECRET.
  */
 export const deduplicateReviews = async (req: Request, res: Response, next: NextFunction): Promise<void> => {

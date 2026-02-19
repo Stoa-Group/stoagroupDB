@@ -3,9 +3,8 @@
  * Deduplicate Reviews
  *
  * Finds duplicate reviews by Property + reviewer_name (normalized).
- * Keeps the most recent (by scraped_at, then review_date, then CreatedAt).
- * Deletes older duplicates—including when the same review is scraped multiple
- * times with different "X days/hours ago" dates that resolve to different rows.
+ * Keeps the OLDEST (first recorded)—preserves original dates. Never overwrites.
+ * Deletes newer duplicates that slipped in before the bulk-insert skip logic.
  *
  * Usage:
  *   npm run db:deduplicate-reviews           # Run deduplication
@@ -18,11 +17,10 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 const NORMALIZE_PROPERTY = `LTRIM(RTRIM(LOWER(ISNULL(Property, N''))))`;
 const NORMALIZE_REVIEWER = `LTRIM(RTRIM(LOWER(ISNULL(reviewer_name, N''))))`;
+/** Keep oldest (first recorded)—preserve dates. */
 const ORDER_BY = `
-  COALESCE(scraped_at, CAST('1900-01-01' AS DATETIME2)) DESC,
-  COALESCE(CAST(review_date AS DATETIME2), CAST('1900-01-01' AS DATETIME2)) DESC,
-  COALESCE(CreatedAt, CAST('1900-01-01' AS DATETIME2)) DESC,
-  ReviewId DESC
+  COALESCE(scraped_at, CreatedAt) ASC,
+  ReviewId ASC
 `;
 
 async function deduplicateReviews() {
@@ -98,7 +96,7 @@ WHERE rn > 1
 ORDER BY Property, reviewer_name
 `;
     const sample = await pool.request().query(sampleSql);
-    console.log('   Sample of rows to DELETE (keeping row with rn=1 in each group):');
+    console.log('   Sample of rows to DELETE (keeping oldest rn=1 in each group):');
     console.table(sample.recordset);
     console.log('');
 
